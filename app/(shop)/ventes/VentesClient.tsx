@@ -2,11 +2,13 @@
 
 import { useState, useMemo } from "react";
 
+type ProductRef = { name: string; size: string | null };
+
 type SaleItem = {
   id: string;
   quantity: number;
   sold_price: number;
-  products: { name: string; size: string | null } | null;
+  products: ProductRef | ProductRef[] | null;
 };
 
 type Sale = {
@@ -25,6 +27,13 @@ const PAYMENT_LABELS: Record<string, string> = {
 
 function fmt(n: number) {
   return (Number(n) || 0).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " MAD";
+}
+
+// products peut être un objet OU un tableau selon Supabase : on normalise
+function getProduct(p: ProductRef | ProductRef[] | null): ProductRef | null {
+  if (!p) return null;
+  if (Array.isArray(p)) return p[0] || null;
+  return p;
 }
 
 export default function VentesClient({ sales }: { sales: Sale[] }) {
@@ -89,15 +98,18 @@ export default function VentesClient({ sales }: { sales: Sale[] }) {
                       <p className="text-sm text-neutral-400">Aucun détail.</p>
                     ) : (
                       <div className="space-y-1.5">
-                        {sale.sale_items.map((item) => (
-                          <div key={item.id} className="flex justify-between text-sm">
-                            <span>
-                              {item.quantity} × {item.products?.name || "Produit supprimé"}
-                              {item.products?.size ? ` (${item.products.size})` : ""}
-                            </span>
-                            <span className="font-medium">{fmt(item.sold_price * item.quantity)}</span>
-                          </div>
-                        ))}
+                        {sale.sale_items.map((item) => {
+                          const prod = getProduct(item.products);
+                          return (
+                            <div key={item.id} className="flex justify-between text-sm">
+                              <span>
+                                {item.quantity} × {prod?.name || "Produit supprimé"}
+                                {prod?.size ? ` (${prod.size})` : ""}
+                              </span>
+                              <span className="font-medium">{fmt(item.sold_price * item.quantity)}</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
