@@ -26,17 +26,18 @@ export default async function ShopLayout({
 
   return (
     <div className="min-h-screen flex flex-col bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 px-4 py-3 flex items-center gap-4">
-        <span className="font-bold text-lg">{shop?.name || "Boutique"}</span>
-        <nav className="flex gap-1 ml-2">
-          <Link href="/caisse" className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-neutral-100">Caisse</Link>
-          <Link href="/produits" className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-neutral-100">Produits</Link>
-          <Link href="/dashboard" className="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-neutral-100">Tableau de bord</Link>
-        </nav>
-        <span className="ml-auto text-sm text-neutral-500">{profile.full_name}</span>
-        <form action="/auth/signout" method="post">
-          <button className="text-sm text-neutral-500 hover:text-neutral-900">Déconnexion</button>
-        </form>
+      <header className="bg-white border-b border-neutral-200 px-3 sm:px-4 py-2.5 sm:py-3">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <span className="font-bold text-base sm:text-lg truncate max-w-[40%] sm:max-w-none">{shop?.name || "Boutique"}</span>
+          <nav className="flex gap-0.5 sm:gap-1 ml-auto sm:ml-2 overflow-x-auto">
+            <Link href="/caisse" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Caisse</Link>
+            <Link href="/produits" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Produits</Link>
+            <Link href="/dashboard" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Bord</Link>
+          </nav>
+          <form action="/auth/signout" method="post" className="ml-auto sm:ml-0 shrink-0">
+            <button className="text-xs sm:text-sm text-neutral-500 hover:text-neutral-900">Déconnexion</button>
+          </form>
+        </div>
       </header>
       <main className="flex-1">{children}</main>
     </div>

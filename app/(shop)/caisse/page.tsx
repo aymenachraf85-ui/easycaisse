@@ -7,9 +7,9 @@ export default async function CaissePage() {
   const { data: products } = await supabase
     .from("products")
     .select("*")
+    .eq("archived", false)
     .order("name", { ascending: true });
 
-  // Récupérer le nom de la boutique pour le ticket
   const { data: { user } } = await supabase.auth.getUser();
   let shopName = "Boutique";
   if (user) {
