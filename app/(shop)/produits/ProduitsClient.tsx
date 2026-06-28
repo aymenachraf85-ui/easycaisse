@@ -21,8 +21,8 @@ type Product = {
 
 const emptyForm = {
   name: "", brand: "", category: "", size: "", color: "",
-  quantity: 0, cost_price: 0, sell_price: 0, barcode: "",
-  low_stock_threshold: 0, photo_url: "",
+  quantity: "", cost_price: "", sell_price: "", barcode: "",
+  low_stock_threshold: "", photo_url: "",
 };
 
 function fmt(n: number) {
@@ -42,7 +42,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
 
   const [form, setForm] = useState(emptyForm);
 
-  // Catégories déjà utilisées dans les produits (suggestions dynamiques)
   const existingCategories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => { if (p.category) set.add(p.category); });
@@ -92,9 +91,12 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     setEditingId(p.id);
     setForm({
       name: p.name, brand: p.brand || "", category: p.category || "",
-      size: p.size || "", color: p.color || "", quantity: p.quantity,
-      cost_price: p.cost_price, sell_price: p.sell_price,
-      barcode: p.barcode || "", low_stock_threshold: p.low_stock_threshold,
+      size: p.size || "", color: p.color || "",
+      quantity: String(p.quantity),
+      cost_price: String(p.cost_price),
+      sell_price: String(p.sell_price),
+      barcode: p.barcode || "",
+      low_stock_threshold: String(p.low_stock_threshold),
       photo_url: p.photo_url || "",
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -222,13 +224,13 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
             <div><label className="text-sm font-medium block mb-1">Code-barres</label>
               <input className={input} value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Quantité</label>
-              <input type="number" className={input} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })} /></div>
+              <input type="number" inputMode="numeric" className={input} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Prix d&apos;achat (MAD)</label>
-              <input type="number" className={input} value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: Number(e.target.value) })} /></div>
+              <input type="number" inputMode="decimal" className={input} value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Prix de vente (MAD)</label>
-              <input type="number" className={input} value={form.sell_price} onChange={(e) => setForm({ ...form, sell_price: Number(e.target.value) })} /></div>
+              <input type="number" inputMode="decimal" className={input} value={form.sell_price} onChange={(e) => setForm({ ...form, sell_price: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Seuil stock faible</label>
-              <input type="number" className={input} value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: Number(e.target.value) })} /></div>
+              <input type="number" inputMode="numeric" className={input} value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
           </div>
 
           <div className="flex gap-2">

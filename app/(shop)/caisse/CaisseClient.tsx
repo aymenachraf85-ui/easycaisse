@@ -22,6 +22,7 @@ type CartLine = {
   size: string | null;
   original_price: number;
   sold_price: number;
+  sold_price_text: string;
   quantity: number;
   max_stock: number;
   reason: string;
@@ -86,6 +87,7 @@ export default function CaisseClient({
       return [...prev, {
         product_id: p.id, name: p.name, size: p.size,
         original_price: p.sell_price, sold_price: p.sell_price,
+        sold_price_text: String(p.sell_price),
         quantity: 1, max_stock: p.quantity, reason: "",
       }];
     });
@@ -96,6 +98,15 @@ export default function CaisseClient({
   }
   function removeLine(id: string) {
     setCart((prev) => prev.filter((c) => c.product_id !== id));
+  }
+
+  // Quand on tape dans le champ prix : on garde le texte ET on met à jour le nombre
+  function changePrice(id: string, text: string) {
+    setCart((prev) => prev.map((c) =>
+      c.product_id === id
+        ? { ...c, sold_price_text: text, sold_price: Number(text) || 0 }
+        : c
+    ));
   }
 
   const total = cart.reduce((s, c) => s + c.sold_price * c.quantity, 0);
@@ -150,7 +161,7 @@ export default function CaisseClient({
                   <span className="px-2 text-sm w-8 text-center">{c.quantity}</span>
                   <button onClick={() => updateLine(c.product_id, { quantity: Math.min(c.max_stock, c.quantity + 1) })} className="px-3 py-1.5 text-neutral-600">+</button>
                 </div>
-                <input type="number" value={c.sold_price} onChange={(e) => updateLine(c.product_id, { sold_price: Number(e.target.value) })} className="w-20 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
+                <input type="number" inputMode="decimal" value={c.sold_price_text} onChange={(e) => changePrice(c.product_id, e.target.value)} className="w-20 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
               </div>
               {c.sold_price !== c.original_price && (
                 <div className="mt-2">
