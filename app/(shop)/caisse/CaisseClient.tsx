@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import Ticket, { TicketData } from "./Ticket";
 
 type Product = {
   id: string;
@@ -38,7 +39,13 @@ function fmt(n: number) {
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " MAD";
 }
 
-export default function CaisseClient({ initialProducts }: { initialProducts: Product[] }) {
+export default function CaisseClient({
+  initialProducts,
+  shopName,
+}: {
+  initialProducts: Product[];
+  shopName: string;
+}) {
   const supabase = createClient();
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [search, setSearch] = useState("");
@@ -46,6 +53,10 @@ export default function CaisseClient({ initialProducts }: { initialProducts: Pro
   const [payment, setPayment] = useState("cash");
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  // Ticket
+  const [ticket, setTicket] = useState<TicketData | null>(null);
+  const [ticketWidth, setTicketWidth] = useState<58 | 80>(80);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -120,7 +131,7 @@ export default function CaisseClient({ initialProducts }: { initialProducts: Pro
       reason: c.reason,
     }));
 
-    const { error } = await supabase.rpc("checkout", {
+    const { data: saleId, error } = await supabase.rpc("checkout", {
       p_payment_method: payment,
       p_items: items,
     });
@@ -131,6 +142,21 @@ export default function CaisseClient({ initialProducts }: { initialProducts: Pro
       setMessage({ type: "err", text: "Erreur : " + error.message });
       return;
     }
+
+    // Préparer le ticket
+    setTicket({
+      shopName,
+      saleId: (saleId as string) || "",
+      items: cart.map((c) => ({
+        name: c.name,
+        size: c.size,
+        quantity: c.quantity,
+        sold_price: c.sold_price,
+      })),
+      total,
+      payment,
+      date: new Date(),
+    });
 
     setMessage({ type: "ok", text: `Vente enregistrée — ${fmt(total)}` });
     setCart([]);
@@ -205,7 +231,6 @@ export default function CaisseClient({ initialProducts }: { initialProducts: Pro
                 </div>
 
                 <div className="flex items-center gap-2 mt-2">
-                  {/* Quantité */}
                   <div className="flex items-center border border-neutral-200 rounded-lg">
                     <button
                       onClick={() => updateLine(c.product_id, { quantity: Math.max(1, c.quantity - 1) })}
@@ -218,7 +243,6 @@ export default function CaisseClient({ initialProducts }: { initialProducts: Pro
                     >+</button>
                   </div>
 
-                  {/* Prix modifiable */}
                   <input
                     type="number"
                     value={c.sold_price}
@@ -227,7 +251,6 @@ export default function CaisseClient({ initialProducts }: { initialProducts: Pro
                   />
                 </div>
 
-                {/* Raison si prix modifié */}
                 {c.sold_price !== c.original_price && (
                   <div className="mt-2">
                     <select
@@ -255,13 +278,11 @@ export default function CaisseClient({ initialProducts }: { initialProducts: Pro
           </div>
         )}
 
-        {/* Total */}
         <div className="flex justify-between items-center border-t border-neutral-200 pt-3 mb-3">
           <span className="font-medium">Total</span>
           <span className="text-xl font-bold">{fmt(total)}</span>
         </div>
 
-        {/* Paiement */}
         <div className="mb-3">
           <label className="text-xs font-medium text-neutral-500 block mb-1">Paiement</label>
           <div className="grid grid-cols-3 gap-1">
@@ -301,6 +322,16 @@ export default function CaisseClient({ initialProducts }: { initialProducts: Pro
           {processing ? "Encaissement…" : "Encaisser"}
         </button>
       </div>
+
+      {/* Ticket après encaissement */}
+      {ticket && (
+        <Ticket
+          data={ticket}
+          width={ticketWidth}
+          onWidthChange={setTicketWidth}
+          onClose={() => setTicket(null)}
+        />
+      )}
     </div>
   );
 }
