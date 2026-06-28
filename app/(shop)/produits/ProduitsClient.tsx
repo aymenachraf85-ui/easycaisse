@@ -19,8 +19,6 @@ type Product = {
   archived: boolean;
 };
 
-const CATEGORIES = ["Homme", "Femme", "Enfant", "Accessoires"];
-
 const emptyForm = {
   name: "", brand: "", category: "", size: "", color: "",
   quantity: 0, cost_price: 0, sell_price: 0, barcode: "",
@@ -43,6 +41,13 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState(emptyForm);
+
+  // Catégories déjà utilisées dans les produits (suggestions dynamiques)
+  const existingCategories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => { if (p.category) set.add(p.category); });
+    return Array.from(set).sort();
+  }, [products]);
 
   const visible = useMemo(() => {
     let list = products.filter((p) => (showArchived ? p.archived : !p.archived));
@@ -203,9 +208,9 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
             <div><label className="text-sm font-medium block mb-1">Nom *</label>
               <input className={input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Catégorie</label>
-              <input list="cat-list" className={input} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Homme, Femme…" />
+              <input list="cat-list" className={input} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Catégorie" />
               <datalist id="cat-list">
-                {CATEGORIES.map((c) => <option key={c} value={c} />)}
+                {existingCategories.map((c) => <option key={c} value={c} />)}
               </datalist>
             </div>
             <div><label className="text-sm font-medium block mb-1">Marque</label>
