@@ -4,22 +4,24 @@ import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Ticket, { TicketData } from "./Ticket";
 
+type Sizes = Record<string, number>;
+
 type Product = {
   id: string;
   name: string;
   category: string | null;
-  size: string | null;
   color: string | null;
-  quantity: number;
   sell_price: number;
   barcode: string | null;
   photo_url: string | null;
+  sizes: Sizes;
 };
 
 type CartLine = {
+  key: string;            // product_id + size (unique par taille)
   product_id: string;
   name: string;
-  size: string | null;
+  size: string;
   original_price: number;
   sold_price: number;
   sold_price_text: string;
@@ -57,6 +59,9 @@ export default function CaisseClient({
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
 
+  // Produit dont on choisit la taille (popup)
+  const [sizePickProduct, setSizePickProduct] = useState<Product | null>(null);
+
   const [ticket, setTicket] = useState<TicketData | null>(null);
   const [ticketWidth, setTicketWidth] = useState<58 | 80>(80);
 
@@ -74,39 +79,50 @@ export default function CaisseClient({
     return list;
   }, [products, search, category]);
 
-  function stockLeft(p: Product) {
-    const inCart = cart.filter((c) => c.product_id === p.id).reduce((s, c) => s + c.quantity, 0);
-    return p.quantity - inCart;
+  function totalStock(sizes: Sizes) {
+    return Object.values(sizes || {}).reduce((s, q) => s + (Number(q) || 0), 0);
   }
 
-  function addToCart(p: Product) {
-    if (stockLeft(p) <= 0) return;
+  // Stock restant d'une taille (en tenant compte du panier)
+  function sizeLeft(product: Product, size: string) {
+    const inCart = cart.filter((c) => c.product_id === product.id && c.size === size).reduce((s, c) => s + c.quantity, 0);
+    return (product.sizes[size] || 0) - inCart;
+  }
+
+  function onProductClick(p: Product) {
+    const availableSizes = Object.keys(p.sizes || {}).filter((s) => (p.sizes[s] || 0) > 0);
+    if (availableSizes.length === 0) return;
+    if (availableSizes.length === 1) {
+      addToCart(p, availableSizes[0]); // une seule taille -> direct
+    } else {
+      setSizePickProduct(p); // plusieurs tailles -> popup
+    }
+  }
+
+  function addToCart(p: Product, size: string) {
+    if (sizeLeft(p, size) <= 0) return;
+    const key = p.id + "|" + size;
     setCart((prev) => {
-      const existing = prev.find((c) => c.product_id === p.id);
-      if (existing) return prev.map((c) => c.product_id === p.id ? { ...c, quantity: c.quantity + 1 } : c);
+      const existing = prev.find((c) => c.key === key);
+      if (existing) return prev.map((c) => c.key === key ? { ...c, quantity: c.quantity + 1 } : c);
       return [...prev, {
-        product_id: p.id, name: p.name, size: p.size,
+        key, product_id: p.id, name: p.name, size,
         original_price: p.sell_price, sold_price: p.sell_price,
         sold_price_text: String(p.sell_price),
-        quantity: 1, max_stock: p.quantity, reason: "",
+        quantity: 1, max_stock: p.sizes[size] || 0, reason: "",
       }];
     });
+    setSizePickProduct(null);
   }
 
-  function updateLine(id: string, patch: Partial<CartLine>) {
-    setCart((prev) => prev.map((c) => (c.product_id === id ? { ...c, ...patch } : c)));
+  function updateLine(key: string, patch: Partial<CartLine>) {
+    setCart((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
   }
-  function removeLine(id: string) {
-    setCart((prev) => prev.filter((c) => c.product_id !== id));
+  function removeLine(key: string) {
+    setCart((prev) => prev.filter((c) => c.key !== key));
   }
-
-  // Quand on tape dans le champ prix : on garde le texte ET on met à jour le nombre
-  function changePrice(id: string, text: string) {
-    setCart((prev) => prev.map((c) =>
-      c.product_id === id
-        ? { ...c, sold_price_text: text, sold_price: Number(text) || 0 }
-        : c
-    ));
+  function changePrice(key: string, text: string) {
+    setCart((prev) => prev.map((c) => c.key === key ? { ...c, sold_price_text: text, sold_price: Number(text) || 0 } : c));
   }
 
   const total = cart.reduce((s, c) => s + c.sold_price * c.quantity, 0);
@@ -122,7 +138,7 @@ export default function CaisseClient({
     setProcessing(true);
     setMessage(null);
     const items = cart.map((c) => ({
-      product_id: c.product_id, quantity: c.quantity,
+      product_id: c.product_id, size: c.size, quantity: c.quantity,
       original_price: c.original_price, sold_price: c.sold_price, reason: c.reason,
     }));
     const { data: saleId, error } = await supabase.rpc("checkout", { p_payment_method: payment, p_items: items });
@@ -148,24 +164,24 @@ export default function CaisseClient({
       ) : (
         <div className="space-y-3 mb-4 max-h-[40vh] lg:max-h-[50vh] overflow-y-auto">
           {cart.map((c) => (
-            <div key={c.product_id} className="border-b border-neutral-100 pb-3">
+            <div key={c.key} className="border-b border-neutral-100 pb-3">
               <div className="flex justify-between items-start gap-2">
                 <div className="text-sm font-medium leading-tight">
-                  {c.name}{c.size ? <span className="text-neutral-400"> · {c.size}</span> : null}
+                  {c.name} <span className="text-neutral-400">· {c.size}</span>
                 </div>
-                <button onClick={() => removeLine(c.product_id)} className="text-red-500 text-xs">✕</button>
+                <button onClick={() => removeLine(c.key)} className="text-red-500 text-xs">✕</button>
               </div>
               <div className="flex items-center gap-2 mt-2">
                 <div className="flex items-center border border-neutral-200 rounded-lg">
-                  <button onClick={() => updateLine(c.product_id, { quantity: Math.max(1, c.quantity - 1) })} className="px-3 py-1.5 text-neutral-600">−</button>
+                  <button onClick={() => updateLine(c.key, { quantity: Math.max(1, c.quantity - 1) })} className="px-3 py-1.5 text-neutral-600">−</button>
                   <span className="px-2 text-sm w-8 text-center">{c.quantity}</span>
-                  <button onClick={() => updateLine(c.product_id, { quantity: Math.min(c.max_stock, c.quantity + 1) })} className="px-3 py-1.5 text-neutral-600">+</button>
+                  <button onClick={() => updateLine(c.key, { quantity: Math.min(c.max_stock, c.quantity + 1) })} className="px-3 py-1.5 text-neutral-600">+</button>
                 </div>
-                <input type="number" inputMode="decimal" value={c.sold_price_text} onChange={(e) => changePrice(c.product_id, e.target.value)} className="w-20 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
+                <input type="number" inputMode="decimal" value={c.sold_price_text} onChange={(e) => changePrice(c.key, e.target.value)} className="w-20 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
               </div>
               {c.sold_price !== c.original_price && (
                 <div className="mt-2">
-                  <select value={c.reason} onChange={(e) => updateLine(c.product_id, { reason: e.target.value })} className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-xs">
+                  <select value={c.reason} onChange={(e) => updateLine(c.key, { reason: e.target.value })} className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-xs">
                     {REASONS.map((r) => <option key={r.value} value={r.value}>{r.value === "" ? "Raison du changement…" : r.label}</option>)}
                   </select>
                   <div className="text-xs text-neutral-400 mt-1">Prix normal : {fmt(c.original_price)}</div>
@@ -200,22 +216,13 @@ export default function CaisseClient({
   return (
     <div className="lg:flex lg:gap-4 p-3 sm:p-4 lg:items-start">
       <div className="flex-1 min-w-0 pb-24 lg:pb-0">
-        <input
-          type="text"
-          placeholder="Rechercher ou scanner un code-barres…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full border border-neutral-300 rounded-lg px-4 py-2.5 mb-3"
-          autoFocus
-        />
+        <input type="text" placeholder="Rechercher ou scanner un code-barres…" value={search} onChange={(e) => setSearch(e.target.value)}
+          className="w-full border border-neutral-300 rounded-lg px-4 py-2.5 mb-3" autoFocus />
 
         <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
           {categories.map((c) => (
-            <button
-              key={c}
-              onClick={() => setCategory(c)}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium border ${category === c ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-700 border-neutral-200"}`}
-            >
+            <button key={c} onClick={() => setCategory(c)}
+              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium border ${category === c ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-700 border-neutral-200"}`}>
               {c}
             </button>
           ))}
@@ -226,9 +233,11 @@ export default function CaisseClient({
             <p className="text-neutral-400 col-span-full py-8 text-center">Aucun produit trouvé.</p>
           ) : (
             filtered.map((p) => {
-              const left = stockLeft(p);
+              const total = totalStock(p.sizes);
+              const inCart = cart.filter((c) => c.product_id === p.id).reduce((s, c) => s + c.quantity, 0);
+              const left = total - inCart;
               return (
-                <button key={p.id} onClick={() => addToCart(p)} disabled={left <= 0}
+                <button key={p.id} onClick={() => onProductClick(p)} disabled={left <= 0}
                   className="text-left bg-white border border-neutral-200 rounded-xl p-3 hover:border-neutral-400 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed">
                   <div className="w-full aspect-square rounded-lg bg-neutral-50 mb-2 overflow-hidden flex items-center justify-center">
                     {p.photo_url ? (
@@ -237,7 +246,7 @@ export default function CaisseClient({
                     ) : <span className="text-neutral-300 text-xs">Pas de photo</span>}
                   </div>
                   <div className="font-medium text-sm leading-tight">{p.name}</div>
-                  <div className="text-xs text-neutral-500 mb-1">{[p.size, p.color].filter(Boolean).join(" · ")}</div>
+                  <div className="text-xs text-neutral-500 mb-1">{p.color || ""}</div>
                   <div className="font-semibold text-sm">{fmt(p.sell_price)}</div>
                   <div className={`text-xs mt-0.5 ${left <= 0 ? "text-red-600" : "text-neutral-400"}`}>{left > 0 ? `${left} en stock` : "Épuisé"}</div>
                 </button>
@@ -252,10 +261,8 @@ export default function CaisseClient({
       </div>
 
       {!cartOpen && (
-        <button
-          onClick={() => setCartOpen(true)}
-          className="lg:hidden fixed bottom-4 left-3 right-3 bg-neutral-900 text-white rounded-xl py-3.5 font-semibold flex items-center justify-between px-5 shadow-lg z-30"
-        >
+        <button onClick={() => setCartOpen(true)}
+          className="lg:hidden fixed bottom-4 left-3 right-3 bg-neutral-900 text-white rounded-xl py-3.5 font-semibold flex items-center justify-between px-5 shadow-lg z-30">
           <span>{cartCount} article{cartCount > 1 ? "s" : ""}</span>
           <span>{fmt(total)}</span>
         </button>
@@ -269,6 +276,29 @@ export default function CaisseClient({
               <button onClick={() => setCartOpen(false)} className="text-neutral-500 text-xl">✕</button>
             </div>
             {cartPanel}
+          </div>
+        </div>
+      )}
+
+      {/* Popup choix de la taille */}
+      {sizePickProduct && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setSizePickProduct(null)}>
+          <div className="bg-white rounded-xl p-5 w-full max-w-xs" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold mb-1">{sizePickProduct.name}</h3>
+            <p className="text-sm text-neutral-500 mb-4">Choisir la taille</p>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.keys(sizePickProduct.sizes || {}).map((size) => {
+                const left = sizeLeft(sizePickProduct, size);
+                return (
+                  <button key={size} onClick={() => addToCart(sizePickProduct, size)} disabled={left <= 0}
+                    className="border border-neutral-200 rounded-lg py-2.5 text-center disabled:opacity-40 disabled:cursor-not-allowed hover:border-neutral-900">
+                    <div className="font-semibold">{size}</div>
+                    <div className={`text-xs ${left <= 0 ? "text-red-600" : "text-neutral-400"}`}>{left > 0 ? `${left} dispo` : "Épuisé"}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => setSizePickProduct(null)} className="w-full mt-4 border border-neutral-300 rounded-lg py-2 text-sm font-medium">Annuler</button>
           </div>
         </div>
       )}

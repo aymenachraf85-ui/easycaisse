@@ -3,30 +3,37 @@
 import { useState, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+type Sizes = Record<string, number>;
+
 type Product = {
   id: string;
   name: string;
   brand: string | null;
   category: string | null;
-  size: string | null;
   color: string | null;
-  quantity: number;
   cost_price: number;
   sell_price: number;
   barcode: string | null;
   low_stock_threshold: number;
   photo_url: string | null;
   archived: boolean;
+  sizes: Sizes;
 };
 
+const COMMON_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "Unique"];
+
 const emptyForm = {
-  name: "", brand: "", category: "", size: "", color: "",
-  quantity: "", cost_price: "", sell_price: "", barcode: "",
+  name: "", brand: "", category: "", color: "",
+  cost_price: "", sell_price: "", barcode: "",
   low_stock_threshold: "", photo_url: "",
 };
 
 function fmt(n: number) {
   return (Number(n) || 0).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function totalStock(sizes: Sizes) {
+  return Object.values(sizes || {}).reduce((s, q) => s + (Number(q) || 0), 0);
 }
 
 export default function ProduitsClient({ initialProducts }: { initialProducts: Product[] }) {
@@ -41,6 +48,8 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState(emptyForm);
+  // Tailles du formulaire : liste de {size, qty} en texte pour saisie libre
+  const [sizeRows, setSizeRows] = useState<{ size: string; qty: string }[]>([{ size: "", qty: "" }]);
 
   const existingCategories = useMemo(() => {
     const set = new Set<string>();
@@ -56,10 +65,7 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
   }, [products, showArchived, search]);
 
   async function refresh() {
-    const { data } = await supabase
-      .from("products")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data } = await supabase.from("products").select("*").order("created_at", { ascending: false });
     setProducts(data || []);
   }
 
@@ -70,11 +76,7 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     const ext = file.name.split(".").pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { error } = await supabase.storage.from("product-images").upload(fileName, file);
-    if (error) {
-      alert("Erreur upload : " + error.message);
-      setUploading(false);
-      return;
-    }
+    if (error) { alert("Erreur upload : " + error.message); setUploading(false); return; }
     const { data } = supabase.storage.from("product-images").getPublicUrl(fileName);
     setForm((f) => ({ ...f, photo_url: data.publicUrl }));
     setUploading(false);
@@ -83,6 +85,7 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
   function openAdd() {
     setEditingId(null);
     setForm(emptyForm);
+    setSizeRows([{ size: "", qty: "" }]);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setShowForm(true);
   }
@@ -91,37 +94,53 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     setEditingId(p.id);
     setForm({
       name: p.name, brand: p.brand || "", category: p.category || "",
-      size: p.size || "", color: p.color || "",
-      quantity: String(p.quantity),
-      cost_price: String(p.cost_price),
-      sell_price: String(p.sell_price),
-      barcode: p.barcode || "",
-      low_stock_threshold: String(p.low_stock_threshold),
-      photo_url: p.photo_url || "",
+      color: p.color || "", cost_price: String(p.cost_price),
+      sell_price: String(p.sell_price), barcode: p.barcode || "",
+      low_stock_threshold: String(p.low_stock_threshold), photo_url: p.photo_url || "",
     });
+    const rows = Object.entries(p.sizes || {}).map(([size, qty]) => ({ size, qty: String(qty) }));
+    setSizeRows(rows.length ? rows : [{ size: "", qty: "" }]);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function updateSizeRow(i: number, field: "size" | "qty", value: string) {
+    setSizeRows((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
+  }
+  function addSizeRow() {
+    setSizeRows((prev) => [...prev, { size: "", qty: "" }]);
+  }
+  function removeSizeRow(i: number) {
+    setSizeRows((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
   async function save() {
-    if (!form.name.trim()) {
-      alert("Le nom du produit est obligatoire");
+    if (!form.name.trim()) { alert("Le nom du produit est obligatoire"); return; }
+
+    // Construire l'objet sizes à partir des lignes
+    const sizes: Sizes = {};
+    for (const r of sizeRows) {
+      const s = r.size.trim();
+      if (s) sizes[s] = Number(r.qty) || 0;
+    }
+    if (Object.keys(sizes).length === 0) {
+      alert("Ajoutez au moins une taille avec sa quantité");
       return;
     }
+
     setSaving(true);
     const payload = {
       name: form.name.trim(),
       brand: form.brand.trim() || null,
       category: form.category.trim() || null,
-      size: form.size.trim() || null,
       color: form.color.trim() || null,
-      quantity: Number(form.quantity) || 0,
       cost_price: Number(form.cost_price) || 0,
       sell_price: Number(form.sell_price) || 0,
       barcode: form.barcode.trim() || null,
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
       photo_url: form.photo_url.trim() || null,
+      sizes,
     };
 
     let error;
@@ -130,13 +149,11 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     } else {
       ({ error } = await supabase.from("products").insert(payload));
     }
-
     setSaving(false);
-    if (error) {
-      alert("Erreur : " + error.message);
-      return;
-    }
+    if (error) { alert("Erreur : " + error.message); return; }
+
     setForm(emptyForm);
+    setSizeRows([{ size: "", qty: "" }]);
     setEditingId(null);
     setShowForm(false);
     refresh();
@@ -148,7 +165,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     if (error) { alert("Erreur : " + error.message); return; }
     refresh();
   }
-
   async function unarchive(id: string) {
     const { error } = await supabase.from("products").update({ archived: false }).eq("id", id);
     if (error) { alert("Erreur : " + error.message); return; }
@@ -162,27 +178,18 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold">Produits</h1>
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowArchived(!showArchived)}
-            className={`rounded-lg px-3 py-2 text-sm font-medium border ${showArchived ? "bg-neutral-200 border-neutral-300" : "bg-white border-neutral-200"}`}
-          >
+          <button onClick={() => setShowArchived(!showArchived)}
+            className={`rounded-lg px-3 py-2 text-sm font-medium border ${showArchived ? "bg-neutral-200 border-neutral-300" : "bg-white border-neutral-200"}`}>
             {showArchived ? "← Produits actifs" : "Voir archivés"}
           </button>
           {!showArchived && (
-            <button onClick={openAdd} className="bg-neutral-900 text-white rounded-lg px-4 py-2 font-medium">
-              + Ajouter
-            </button>
+            <button onClick={openAdd} className="bg-neutral-900 text-white rounded-lg px-4 py-2 font-medium">+ Ajouter</button>
           )}
         </div>
       </div>
 
-      <input
-        type="text"
-        placeholder="Rechercher…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full border border-neutral-300 rounded-lg px-4 py-2 mb-4"
-      />
+      <input type="text" placeholder="Rechercher…" value={search} onChange={(e) => setSearch(e.target.value)}
+        className="w-full border border-neutral-300 rounded-lg px-4 py-2 mb-4" />
 
       {showForm && !showArchived && (
         <div className="bg-white border border-neutral-200 rounded-xl p-4 sm:p-5 mb-6">
@@ -193,9 +200,7 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
               {form.photo_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={form.photo_url} alt="aperçu" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-neutral-400 text-xs text-center px-2">Aucune photo</span>
-              )}
+              ) : <span className="text-neutral-400 text-xs text-center px-2">Aucune photo</span>}
             </div>
             <div className="flex-1 w-full">
               <label className="text-sm font-medium block mb-1">Photo (optionnel)</label>
@@ -211,71 +216,92 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
               <input className={input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Catégorie</label>
               <input list="cat-list" className={input} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Catégorie" />
-              <datalist id="cat-list">
-                {existingCategories.map((c) => <option key={c} value={c} />)}
-              </datalist>
+              <datalist id="cat-list">{existingCategories.map((c) => <option key={c} value={c} />)}</datalist>
             </div>
             <div><label className="text-sm font-medium block mb-1">Marque</label>
               <input className={input} value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></div>
-            <div><label className="text-sm font-medium block mb-1">Taille</label>
-              <input className={input} value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Couleur</label>
               <input className={input} value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Code-barres</label>
               <input className={input} value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} /></div>
-            <div><label className="text-sm font-medium block mb-1">Quantité</label>
-              <input type="number" inputMode="numeric" className={input} value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Prix d&apos;achat (MAD)</label>
               <input type="number" inputMode="decimal" className={input} value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Prix de vente (MAD)</label>
               <input type="number" inputMode="decimal" className={input} value={form.sell_price} onChange={(e) => setForm({ ...form, sell_price: e.target.value })} /></div>
-            <div><label className="text-sm font-medium block mb-1">Seuil stock faible</label>
+            <div><label className="text-sm font-medium block mb-1">Seuil stock faible (total)</label>
               <input type="number" inputMode="numeric" className={input} value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
+          </div>
+
+          {/* Tailles + quantités */}
+          <div className="mb-4">
+            <label className="text-sm font-medium block mb-2">Tailles et quantités *</label>
+            <datalist id="size-list">{COMMON_SIZES.map((s) => <option key={s} value={s} />)}</datalist>
+            <div className="space-y-2">
+              {sizeRows.map((row, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input list="size-list" placeholder="Taille (S, M, L…)" value={row.size}
+                    onChange={(e) => updateSizeRow(i, "size", e.target.value)}
+                    className="border border-neutral-300 rounded-lg px-3 py-2 flex-1" />
+                  <input type="number" inputMode="numeric" placeholder="Qté" value={row.qty}
+                    onChange={(e) => updateSizeRow(i, "qty", e.target.value)}
+                    className="border border-neutral-300 rounded-lg px-3 py-2 w-24" />
+                  <button onClick={() => removeSizeRow(i)} className="text-red-500 px-2" type="button">✕</button>
+                </div>
+              ))}
+            </div>
+            <button onClick={addSizeRow} type="button" className="mt-2 text-sm text-blue-600 font-medium">+ Ajouter une taille</button>
           </div>
 
           <div className="flex gap-2">
             <button onClick={save} disabled={saving || uploading} className="bg-neutral-900 text-white rounded-lg px-4 py-2 font-medium disabled:opacity-50">
               {saving ? "Enregistrement…" : editingId ? "Enregistrer les modifications" : "Ajouter le produit"}
             </button>
-            <button onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); }} className="border border-neutral-300 rounded-lg px-4 py-2 font-medium">
-              Annuler
-            </button>
+            <button onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); setSizeRows([{ size: "", qty: "" }]); }}
+              className="border border-neutral-300 rounded-lg px-4 py-2 font-medium">Annuler</button>
           </div>
         </div>
       )}
 
+      {/* Vue mobile */}
       <div className="sm:hidden space-y-3">
         {visible.length === 0 ? (
           <p className="text-center text-neutral-400 py-8">Aucun produit.</p>
         ) : (
-          visible.map((p) => (
-            <div key={p.id} className={`bg-white border rounded-xl p-3 flex gap-3 ${p.quantity <= p.low_stock_threshold && !p.archived ? "border-red-200" : "border-neutral-200"}`}>
-              <div className="w-16 h-16 rounded-lg bg-neutral-50 overflow-hidden shrink-0 flex items-center justify-center">
-                {p.photo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
-                ) : <span className="text-neutral-300 text-xs">—</span>}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium">{p.name}</div>
-                <div className="text-xs text-neutral-500">{[p.category, p.size, p.color].filter(Boolean).join(" · ")}</div>
-                <div className="text-sm mt-1">{fmt(p.sell_price)} MAD · <span className={p.quantity <= p.low_stock_threshold ? "text-red-600" : ""}>{p.quantity} en stock</span></div>
-                <div className="flex gap-3 mt-2">
-                  {p.archived ? (
-                    <button onClick={() => unarchive(p.id)} className="text-green-600 text-xs font-medium">Réactiver</button>
-                  ) : (
-                    <>
-                      <button onClick={() => openEdit(p)} className="text-blue-600 text-xs font-medium">Modifier</button>
-                      <button onClick={() => archive(p.id, p.name)} className="text-orange-600 text-xs font-medium">Archiver</button>
-                    </>
-                  )}
+          visible.map((p) => {
+            const total = totalStock(p.sizes);
+            return (
+              <div key={p.id} className={`bg-white border rounded-xl p-3 flex gap-3 ${total <= p.low_stock_threshold && !p.archived ? "border-red-200" : "border-neutral-200"}`}>
+                <div className="w-16 h-16 rounded-lg bg-neutral-50 overflow-hidden shrink-0 flex items-center justify-center">
+                  {p.photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
+                  ) : <span className="text-neutral-300 text-xs">—</span>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">{p.name}</div>
+                  <div className="text-xs text-neutral-500">{[p.category, p.color].filter(Boolean).join(" · ")}</div>
+                  <div className="text-xs text-neutral-600 mt-1">
+                    {Object.entries(p.sizes || {}).map(([s, q]) => `${s}:${q}`).join("  ") || "Pas de stock"}
+                  </div>
+                  <div className="text-sm mt-1">{fmt(p.sell_price)} MAD · <span className={total <= p.low_stock_threshold ? "text-red-600" : ""}>{total} total</span></div>
+                  <div className="flex gap-3 mt-2">
+                    {p.archived ? (
+                      <button onClick={() => unarchive(p.id)} className="text-green-600 text-xs font-medium">Réactiver</button>
+                    ) : (
+                      <>
+                        <button onClick={() => openEdit(p)} className="text-blue-600 text-xs font-medium">Modifier</button>
+                        <button onClick={() => archive(p.id, p.name)} className="text-orange-600 text-xs font-medium">Archiver</button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
+      {/* Vue desktop */}
       <div className="hidden sm:block bg-white border border-neutral-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
@@ -283,8 +309,8 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
               <th className="text-left px-3 py-2">Photo</th>
               <th className="text-left px-3 py-2">Nom</th>
               <th className="text-left px-3 py-2">Catégorie</th>
-              <th className="text-left px-3 py-2">Taille</th>
-              <th className="text-left px-3 py-2">Qté</th>
+              <th className="text-left px-3 py-2">Tailles (stock)</th>
+              <th className="text-left px-3 py-2">Total</th>
               <th className="text-left px-3 py-2">Prix vente</th>
               <th className="px-3 py-2"></th>
             </tr>
@@ -293,33 +319,40 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
             {visible.length === 0 ? (
               <tr><td colSpan={7} className="text-center text-neutral-400 py-8">Aucun produit.</td></tr>
             ) : (
-              visible.map((p) => (
-                <tr key={p.id} className={`border-t border-neutral-100 ${p.quantity <= p.low_stock_threshold && !p.archived ? "bg-red-50" : ""}`}>
-                  <td className="px-3 py-2">
-                    <div className="w-10 h-10 rounded-md border border-neutral-200 bg-neutral-50 overflow-hidden flex items-center justify-center">
-                      {p.photo_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
-                      ) : <span className="text-neutral-300 text-[10px]">—</span>}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 font-medium">{p.name}</td>
-                  <td className="px-3 py-2">{p.category || "—"}</td>
-                  <td className="px-3 py-2">{p.size || "—"}</td>
-                  <td className={`px-3 py-2 ${p.quantity <= p.low_stock_threshold && !p.archived ? "text-red-600 font-medium" : ""}`}>{p.quantity}</td>
-                  <td className="px-3 py-2">{fmt(p.sell_price)} MAD</td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {p.archived ? (
-                      <button onClick={() => unarchive(p.id)} className="text-green-600 text-xs hover:underline">Réactiver</button>
-                    ) : (
-                      <>
-                        <button onClick={() => openEdit(p)} className="text-blue-600 text-xs hover:underline mr-3">Modifier</button>
-                        <button onClick={() => archive(p.id, p.name)} className="text-orange-600 text-xs hover:underline">Archiver</button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))
+              visible.map((p) => {
+                const total = totalStock(p.sizes);
+                return (
+                  <tr key={p.id} className={`border-t border-neutral-100 ${total <= p.low_stock_threshold && !p.archived ? "bg-red-50" : ""}`}>
+                    <td className="px-3 py-2">
+                      <div className="w-10 h-10 rounded-md border border-neutral-200 bg-neutral-50 overflow-hidden flex items-center justify-center">
+                        {p.photo_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
+                        ) : <span className="text-neutral-300 text-[10px]">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 font-medium">{p.name}</td>
+                    <td className="px-3 py-2">{p.category || "—"}</td>
+                    <td className="px-3 py-2 text-xs">
+                      {Object.entries(p.sizes || {}).map(([s, q]) => (
+                        <span key={s} className="inline-block bg-neutral-100 rounded px-1.5 py-0.5 mr-1 mb-1">{s}: {q}</span>
+                      ))}
+                    </td>
+                    <td className={`px-3 py-2 ${total <= p.low_stock_threshold && !p.archived ? "text-red-600 font-medium" : ""}`}>{total}</td>
+                    <td className="px-3 py-2">{fmt(p.sell_price)} MAD</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {p.archived ? (
+                        <button onClick={() => unarchive(p.id)} className="text-green-600 text-xs hover:underline">Réactiver</button>
+                      ) : (
+                        <>
+                          <button onClick={() => openEdit(p)} className="text-blue-600 text-xs hover:underline mr-3">Modifier</button>
+                          <button onClick={() => archive(p.id, p.name)} className="text-orange-600 text-xs hover:underline">Archiver</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

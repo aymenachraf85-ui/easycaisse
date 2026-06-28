@@ -8,7 +8,7 @@ export default async function VentesPage() {
     .from("sales")
     .select(`
       id, total, payment_method, created_at,
-      sale_items ( id, quantity, sold_price, products ( name, size ) )
+      sale_items ( id, quantity, sold_price, size, products ( name ) )
     `)
     .order("created_at", { ascending: false })
     .limit(200);
