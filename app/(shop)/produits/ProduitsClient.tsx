@@ -48,7 +48,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState(emptyForm);
-  // Tailles du formulaire : liste de {size, qty} en texte pour saisie libre
   const [sizeRows, setSizeRows] = useState<{ size: string; qty: string }[]>([{ size: "", qty: "" }]);
 
   const existingCategories = useMemo(() => {
@@ -69,16 +68,51 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     setProducts(data || []);
   }
 
+  // Compresse une image dans le navigateur (réduit la taille avant upload)
+  function compressImage(file: File): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxWidth = 1000;
+          const scale = Math.min(1, maxWidth / img.width);
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { reject(new Error("Canvas non supporté")); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(
+            (blob) => { blob ? resolve(blob) : reject(new Error("Compression échouée")); },
+            "image/jpeg",
+            0.8
+          );
+        };
+        img.onerror = () => reject(new Error("Image illisible"));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error("Lecture échouée"));
+      reader.readAsDataURL(file);
+    });
+  }
+
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const ext = file.name.split(".").pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage.from("product-images").upload(fileName, file);
-    if (error) { alert("Erreur upload : " + error.message); setUploading(false); return; }
-    const { data } = supabase.storage.from("product-images").getPublicUrl(fileName);
-    setForm((f) => ({ ...f, photo_url: data.publicUrl }));
+    try {
+      const compressed = await compressImage(file);
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+      const { error } = await supabase.storage
+        .from("product-images")
+        .upload(fileName, compressed, { contentType: "image/jpeg" });
+      if (error) { alert("Erreur upload : " + error.message); setUploading(false); return; }
+      const { data } = supabase.storage.from("product-images").getPublicUrl(fileName);
+      setForm((f) => ({ ...f, photo_url: data.publicUrl }));
+    } catch (err) {
+      alert("Erreur lors du traitement de l'image : " + (err as Error).message);
+    }
     setUploading(false);
   }
 
@@ -118,7 +152,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
   async function save() {
     if (!form.name.trim()) { alert("Le nom du produit est obligatoire"); return; }
 
-    // Construire l'objet sizes à partir des lignes
     const sizes: Sizes = {};
     for (const r of sizeRows) {
       const s = r.size.trim();
@@ -205,7 +238,7 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
             <div className="flex-1 w-full">
               <label className="text-sm font-medium block mb-1">Photo (optionnel)</label>
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="block text-sm mb-2" />
-              {uploading && <p className="text-xs text-neutral-500 mb-2">Upload en cours…</p>}
+              {uploading && <p className="text-xs text-neutral-500 mb-2">Traitement et upload en cours…</p>}
               <label className="text-sm font-medium block mb-1">Ou lien d&apos;image</label>
               <input className={input} placeholder="https://…" value={form.photo_url} onChange={(e) => setForm({ ...form, photo_url: e.target.value })} />
             </div>
@@ -232,7 +265,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
               <input type="number" inputMode="numeric" className={input} value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })} /></div>
           </div>
 
-          {/* Tailles + quantités */}
           <div className="mb-4">
             <label className="text-sm font-medium block mb-2">Tailles et quantités *</label>
             <datalist id="size-list">{COMMON_SIZES.map((s) => <option key={s} value={s} />)}</datalist>
@@ -262,7 +294,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
         </div>
       )}
 
-      {/* Vue mobile */}
       <div className="sm:hidden space-y-3">
         {visible.length === 0 ? (
           <p className="text-center text-neutral-400 py-8">Aucun produit.</p>
@@ -301,7 +332,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
         )}
       </div>
 
-      {/* Vue desktop */}
       <div className="hidden sm:block bg-white border border-neutral-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-500 text-xs uppercase">
