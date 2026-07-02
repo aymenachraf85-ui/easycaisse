@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Ticket, { TicketData } from "./Ticket";
 
@@ -17,8 +17,10 @@ type Product = {
   sizes: Sizes;
 };
 
+type BarcodeRow = { code: string; product_id: string; size: string };
+
 type CartLine = {
-  key: string;            // product_id + size (unique par taille)
+  key: string;
   product_id: string;
   name: string;
   size: string;
@@ -38,15 +40,29 @@ const REASONS = [
   { value: "deal_special", label: "Deal spécial" },
 ];
 
+// Palette de couleurs attribuées aux catégories (dans l'ordre)
+const CATEGORY_COLORS = [
+  { bg: "bg-blue-500", light: "bg-blue-50", border: "border-blue-400", text: "text-blue-700", bar: "#3b82f6" },
+  { bg: "bg-pink-500", light: "bg-pink-50", border: "border-pink-400", text: "text-pink-700", bar: "#ec4899" },
+  { bg: "bg-amber-500", light: "bg-amber-50", border: "border-amber-400", text: "text-amber-700", bar: "#f59e0b" },
+  { bg: "bg-emerald-500", light: "bg-emerald-50", border: "border-emerald-400", text: "text-emerald-700", bar: "#10b981" },
+  { bg: "bg-purple-500", light: "bg-purple-50", border: "border-purple-400", text: "text-purple-700", bar: "#a855f7" },
+  { bg: "bg-red-500", light: "bg-red-50", border: "border-red-400", text: "text-red-700", bar: "#ef4444" },
+  { bg: "bg-cyan-500", light: "bg-cyan-50", border: "border-cyan-400", text: "text-cyan-700", bar: "#06b6d4" },
+  { bg: "bg-orange-500", light: "bg-orange-50", border: "border-orange-400", text: "text-orange-700", bar: "#f97316" },
+];
+
 function fmt(n: number) {
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " MAD";
 }
 
 export default function CaisseClient({
   initialProducts,
+  barcodes,
   shopName,
 }: {
   initialProducts: Product[];
+  barcodes: BarcodeRow[];
   shopName: string;
 }) {
   const supabase = createClient();
@@ -58,18 +74,39 @@ export default function CaisseClient({
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<string | null>(null);
 
-  // Produit dont on choisit la taille (popup)
   const [sizePickProduct, setSizePickProduct] = useState<Product | null>(null);
 
   const [ticket, setTicket] = useState<TicketData | null>(null);
   const [ticketWidth, setTicketWidth] = useState<58 | 80>(80);
+
+  const barcodeMap = useMemo(() => {
+    const m = new Map<string, { product_id: string; size: string }>();
+    barcodes.forEach((b) => m.set(b.code, { product_id: b.product_id, size: b.size }));
+    return m;
+  }, [barcodes]);
+
+  const productMap = useMemo(() => {
+    const m = new Map<string, Product>();
+    products.forEach((p) => m.set(p.id, p));
+    return m;
+  }, [products]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => { if (p.category) set.add(p.category); });
     return ["Tous", ...Array.from(set)];
   }, [products]);
+
+  // Attribue une couleur à chaque catégorie
+  const categoryColor = useMemo(() => {
+    const map = new Map<string, typeof CATEGORY_COLORS[0]>();
+    categories.filter((c) => c !== "Tous").forEach((c, i) => {
+      map.set(c, CATEGORY_COLORS[i % CATEGORY_COLORS.length]);
+    });
+    return map;
+  }, [categories]);
 
   const filtered = useMemo(() => {
     let list = products;
@@ -83,7 +120,6 @@ export default function CaisseClient({
     return Object.values(sizes || {}).reduce((s, q) => s + (Number(q) || 0), 0);
   }
 
-  // Stock restant d'une taille (en tenant compte du panier)
   function sizeLeft(product: Product, size: string) {
     const inCart = cart.filter((c) => c.product_id === product.id && c.size === size).reduce((s, c) => s + c.quantity, 0);
     return (product.sizes[size] || 0) - inCart;
@@ -93,9 +129,9 @@ export default function CaisseClient({
     const availableSizes = Object.keys(p.sizes || {}).filter((s) => (p.sizes[s] || 0) > 0);
     if (availableSizes.length === 0) return;
     if (availableSizes.length === 1) {
-      addToCart(p, availableSizes[0]); // une seule taille -> direct
+      addToCart(p, availableSizes[0]);
     } else {
-      setSizePickProduct(p); // plusieurs tailles -> popup
+      setSizePickProduct(p);
     }
   }
 
@@ -114,6 +150,57 @@ export default function CaisseClient({
     });
     setSizePickProduct(null);
   }
+
+  const scanBuffer = useRef("");
+  const scanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    function handleScan(code: string) {
+      const found = barcodeMap.get(code.trim());
+      if (!found) {
+        setScanFeedback(`Code inconnu : ${code}`);
+        setTimeout(() => setScanFeedback(null), 2000);
+        return;
+      }
+      const product = productMap.get(found.product_id);
+      if (!product) {
+        setScanFeedback("Produit introuvable");
+        setTimeout(() => setScanFeedback(null), 2000);
+        return;
+      }
+      if (sizeLeft(product, found.size) <= 0) {
+        setScanFeedback(`${product.name} (${found.size}) — épuisé`);
+        setTimeout(() => setScanFeedback(null), 2000);
+        return;
+      }
+      addToCart(product, found.size);
+      setScanFeedback(`✓ ${product.name} (${found.size})`);
+      setTimeout(() => setScanFeedback(null), 1500);
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+
+      if (e.key === "Enter") {
+        if (scanBuffer.current.length >= 6) {
+          handleScan(scanBuffer.current);
+          scanBuffer.current = "";
+          e.preventDefault();
+        }
+        return;
+      }
+      if (e.key.length === 1 && !isInput) {
+        scanBuffer.current += e.key;
+        if (scanTimer.current) clearTimeout(scanTimer.current);
+        scanTimer.current = setTimeout(() => { scanBuffer.current = ""; }, 100);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barcodeMap, productMap, cart]);
 
   function updateLine(key: string, patch: Partial<CartLine>) {
     setCart((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
@@ -173,9 +260,9 @@ export default function CaisseClient({
               </div>
               <div className="flex items-center gap-2 mt-2">
                 <div className="flex items-center border border-neutral-200 rounded-lg">
-                  <button onClick={() => updateLine(c.key, { quantity: Math.max(1, c.quantity - 1) })} className="px-3 py-1.5 text-neutral-600">−</button>
+                  <button onClick={() => updateLine(c.key, { quantity: Math.max(1, c.quantity - 1) })} className="px-3 py-1.5 text-neutral-600 font-bold">−</button>
                   <span className="px-2 text-sm w-8 text-center">{c.quantity}</span>
-                  <button onClick={() => updateLine(c.key, { quantity: Math.min(c.max_stock, c.quantity + 1) })} className="px-3 py-1.5 text-neutral-600">+</button>
+                  <button onClick={() => updateLine(c.key, { quantity: Math.min(c.max_stock, c.quantity + 1) })} className="px-3 py-1.5 text-neutral-600 font-bold">+</button>
                 </div>
                 <input type="number" inputMode="decimal" value={c.sold_price_text} onChange={(e) => changePrice(c.key, e.target.value)} className="w-20 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
               </div>
@@ -194,38 +281,64 @@ export default function CaisseClient({
       )}
       <div className="flex justify-between items-center border-t border-neutral-200 pt-3 mb-3">
         <span className="font-medium">Total</span>
-        <span className="text-xl font-bold">{fmt(total)}</span>
+        <span className="text-2xl font-bold">{fmt(total)}</span>
       </div>
       <div className="mb-3">
         <label className="text-xs font-medium text-neutral-500 block mb-1">Paiement</label>
-        <div className="grid grid-cols-3 gap-1">
-          {[{ v: "cash", l: "Espèces" }, { v: "card", l: "Carte" }, { v: "transfer", l: "Virement" }].map((m) => (
-            <button key={m.v} onClick={() => setPayment(m.v)} className={`text-xs py-2.5 rounded-lg border ${payment === m.v ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-700 border-neutral-200"}`}>{m.l}</button>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { v: "cash", l: "Espèces", c: "bg-emerald-500 border-emerald-500" },
+            { v: "card", l: "Carte", c: "bg-blue-500 border-blue-500" },
+            { v: "transfer", l: "Virement", c: "bg-purple-500 border-purple-500" },
+          ].map((m) => (
+            <button key={m.v} onClick={() => setPayment(m.v)}
+              className={`text-xs py-2.5 rounded-lg border font-medium ${payment === m.v ? `${m.c} text-white` : "bg-white text-neutral-700 border-neutral-200"}`}>
+              {m.l}
+            </button>
           ))}
         </div>
       </div>
       {message && (
         <div className={`text-sm rounded-lg px-3 py-2 mb-3 ${message.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{message.text}</div>
       )}
-      <button onClick={checkout} disabled={cart.length === 0 || processing} className="w-full bg-neutral-900 text-white rounded-lg py-3 font-semibold disabled:opacity-50">
-        {processing ? "Encaissement…" : "Encaisser"}
+      <button onClick={checkout} disabled={cart.length === 0 || processing}
+        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-4 font-bold text-lg disabled:opacity-40 disabled:bg-neutral-400">
+        {processing ? "Encaissement…" : "✓ Encaisser"}
       </button>
     </>
   );
 
   return (
     <div className="lg:flex lg:gap-4 p-3 sm:p-4 lg:items-start">
+      {scanFeedback && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm shadow-lg">
+          {scanFeedback}
+        </div>
+      )}
+
       <div className="flex-1 min-w-0 pb-24 lg:pb-0">
         <input type="text" placeholder="Rechercher ou scanner un code-barres…" value={search} onChange={(e) => setSearch(e.target.value)}
-          className="w-full border border-neutral-300 rounded-lg px-4 py-2.5 mb-3" autoFocus />
+          className="w-full border border-neutral-300 rounded-lg px-4 py-2.5 mb-3" />
 
         <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
-          {categories.map((c) => (
-            <button key={c} onClick={() => setCategory(c)}
-              className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium border ${category === c ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-700 border-neutral-200"}`}>
-              {c}
-            </button>
-          ))}
+          {categories.map((c) => {
+            const col = categoryColor.get(c);
+            const active = category === c;
+            return (
+              <button key={c} onClick={() => setCategory(c)}
+                className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium border ${
+                  active
+                    ? c === "Tous"
+                      ? "bg-neutral-900 text-white border-neutral-900"
+                      : `${col?.bg} text-white ${col?.border}`
+                    : c === "Tous"
+                      ? "bg-white text-neutral-700 border-neutral-200"
+                      : `${col?.light} ${col?.text} ${col?.border}`
+                }`}>
+                {c}
+              </button>
+            );
+          })}
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -236,19 +349,24 @@ export default function CaisseClient({
               const total = totalStock(p.sizes);
               const inCart = cart.filter((c) => c.product_id === p.id).reduce((s, c) => s + c.quantity, 0);
               const left = total - inCart;
+              const col = p.category ? categoryColor.get(p.category) : null;
               return (
                 <button key={p.id} onClick={() => onProductClick(p)} disabled={left <= 0}
-                  className="text-left bg-white border border-neutral-200 rounded-xl p-3 hover:border-neutral-400 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed">
-                  <div className="w-full aspect-square rounded-lg bg-neutral-50 mb-2 overflow-hidden flex items-center justify-center">
-                    {p.photo_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
-                    ) : <span className="text-neutral-300 text-xs">Pas de photo</span>}
+                  className="text-left bg-white border border-neutral-200 rounded-xl overflow-hidden hover:border-neutral-400 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed">
+                  {/* Bande de couleur de la catégorie */}
+                  <div className={`h-1.5 w-full ${col?.bg || "bg-neutral-200"}`}></div>
+                  <div className="p-3">
+                    <div className="w-full aspect-square rounded-lg bg-neutral-50 mb-2 overflow-hidden flex items-center justify-center">
+                      {p.photo_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.photo_url} alt={p.name} className="w-full h-full object-cover" />
+                      ) : <span className="text-neutral-300 text-xs">Pas de photo</span>}
+                    </div>
+                    <div className="font-medium text-sm leading-tight">{p.name}</div>
+                    <div className="text-xs text-neutral-500 mb-1">{p.color || ""}</div>
+                    <div className="font-semibold text-sm">{fmt(p.sell_price)}</div>
+                    <div className={`text-xs mt-0.5 ${left <= 0 ? "text-red-600" : "text-neutral-400"}`}>{left > 0 ? `${left} en stock` : "Épuisé"}</div>
                   </div>
-                  <div className="font-medium text-sm leading-tight">{p.name}</div>
-                  <div className="text-xs text-neutral-500 mb-1">{p.color || ""}</div>
-                  <div className="font-semibold text-sm">{fmt(p.sell_price)}</div>
-                  <div className={`text-xs mt-0.5 ${left <= 0 ? "text-red-600" : "text-neutral-400"}`}>{left > 0 ? `${left} en stock` : "Épuisé"}</div>
                 </button>
               );
             })
@@ -262,7 +380,7 @@ export default function CaisseClient({
 
       {!cartOpen && (
         <button onClick={() => setCartOpen(true)}
-          className="lg:hidden fixed bottom-4 left-3 right-3 bg-neutral-900 text-white rounded-xl py-3.5 font-semibold flex items-center justify-between px-5 shadow-lg z-30">
+          className="lg:hidden fixed bottom-4 left-3 right-3 bg-emerald-600 text-white rounded-xl py-3.5 font-bold flex items-center justify-between px-5 shadow-lg z-30">
           <span>{cartCount} article{cartCount > 1 ? "s" : ""}</span>
           <span>{fmt(total)}</span>
         </button>
@@ -280,7 +398,6 @@ export default function CaisseClient({
         </div>
       )}
 
-      {/* Popup choix de la taille */}
       {sizePickProduct && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setSizePickProduct(null)}>
           <div className="bg-white rounded-xl p-5 w-full max-w-xs" onClick={(e) => e.stopPropagation()}>

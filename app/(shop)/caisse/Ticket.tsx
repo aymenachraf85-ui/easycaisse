@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 type TicketItem = {
   name: string;
   size: string | null;
@@ -37,31 +39,25 @@ export default function Ticket({
   onClose: () => void;
   onWidthChange: (w: 58 | 80) => void;
 }) {
-  function printTicket() {
-    window.print();
-  }
+  // Impression automatique dès l'affichage du ticket
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      window.print();
+    }, 300); // petit délai pour que le ticket soit bien rendu
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 print:bg-white print:p-0 print:block">
       <div className="bg-white rounded-xl max-w-md w-full print:rounded-none print:max-w-none print:w-auto">
-        {/* Barre d'actions (cachée à l'impression) */}
         <div className="flex items-center justify-between p-4 border-b border-neutral-200 print:hidden">
           <h3 className="font-semibold">Ticket de caisse</h3>
-          <div className="flex items-center gap-2">
-            <div className="flex border border-neutral-200 rounded-lg overflow-hidden text-xs">
-              <button
-                onClick={() => onWidthChange(58)}
-                className={`px-3 py-1.5 ${width === 58 ? "bg-neutral-900 text-white" : "bg-white"}`}
-              >58mm</button>
-              <button
-                onClick={() => onWidthChange(80)}
-                className={`px-3 py-1.5 ${width === 80 ? "bg-neutral-900 text-white" : "bg-white"}`}
-              >80mm</button>
-            </div>
+          <div className="flex border border-neutral-200 rounded-lg overflow-hidden text-xs">
+            <button onClick={() => onWidthChange(58)} className={`px-3 py-1.5 ${width === 58 ? "bg-neutral-900 text-white" : "bg-white"}`}>58mm</button>
+            <button onClick={() => onWidthChange(80)} className={`px-3 py-1.5 ${width === 80 ? "bg-neutral-900 text-white" : "bg-white"}`}>80mm</button>
           </div>
         </div>
 
-        {/* Le ticket */}
         <div className="p-4 print:p-0 flex justify-center">
           <div
             id="ticket-print-area"
@@ -109,38 +105,17 @@ export default function Ticket({
           </div>
         </div>
 
-        {/* Boutons (cachés à l'impression) */}
         <div className="flex gap-2 p-4 border-t border-neutral-200 print:hidden">
-          <button
-            onClick={onClose}
-            className="flex-1 border border-neutral-300 rounded-lg py-2.5 font-medium"
-          >
-            Fermer
-          </button>
-          <button
-            onClick={printTicket}
-            className="flex-1 bg-neutral-900 text-white rounded-lg py-2.5 font-medium"
-          >
-            Imprimer / PDF
-          </button>
+          <button onClick={onClose} className="flex-1 border border-neutral-300 rounded-lg py-2.5 font-medium">Fermer</button>
+          <button onClick={() => window.print()} className="flex-1 bg-neutral-900 text-white rounded-lg py-2.5 font-medium">Réimprimer</button>
         </div>
       </div>
 
-      {/* Styles d'impression : n'imprimer que le ticket */}
       <style jsx global>{`
         @media print {
-          body * {
-            visibility: hidden;
-          }
-          #ticket-print-area,
-          #ticket-print-area * {
-            visibility: visible;
-          }
-          #ticket-print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-          }
+          body * { visibility: hidden; }
+          #ticket-print-area, #ticket-print-area * { visibility: visible; }
+          #ticket-print-area { position: absolute; left: 0; top: 0; }
         }
       `}</style>
     </div>

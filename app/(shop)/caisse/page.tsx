@@ -10,6 +10,10 @@ export default async function CaissePage() {
     .eq("archived", false)
     .order("name", { ascending: true });
 
+  const { data: barcodes } = await supabase
+    .from("barcodes")
+    .select("code, product_id, size");
+
   const { data: { user } } = await supabase.auth.getUser();
   let shopName = "Boutique";
   if (user) {
@@ -28,5 +32,5 @@ export default async function CaissePage() {
     }
   }
 
-  return <CaisseClient initialProducts={products || []} shopName={shopName} />;
+  return <CaisseClient initialProducts={products || []} barcodes={barcodes || []} shopName={shopName} />;
 }

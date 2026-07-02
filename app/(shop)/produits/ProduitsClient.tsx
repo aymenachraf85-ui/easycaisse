@@ -2,6 +2,7 @@
 
 import { useState, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import BarcodeModal from "./BarcodeModal";
 
 type Sizes = Record<string, number>;
 
@@ -19,6 +20,8 @@ type Product = {
   archived: boolean;
   sizes: Sizes;
 };
+
+type BarcodeEntry = { size: string; code: string; qty: number };
 
 const COMMON_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "Unique"];
 
@@ -50,6 +53,8 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
   const [form, setForm] = useState(emptyForm);
   const [sizeRows, setSizeRows] = useState<{ size: string; qty: string }[]>([{ size: "", qty: "" }]);
 
+  const [barcodeModal, setBarcodeModal] = useState<{ name: string; entries: BarcodeEntry[] } | null>(null);
+
   const existingCategories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => { if (p.category) set.add(p.category); });
@@ -68,7 +73,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     setProducts(data || []);
   }
 
-  // Compresse une image dans le navigateur (réduit la taille avant upload)
   function compressImage(file: File): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -85,8 +89,7 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           canvas.toBlob(
             (blob) => { blob ? resolve(blob) : reject(new Error("Compression échouée")); },
-            "image/jpeg",
-            0.8
+            "image/jpeg", 0.8
           );
         };
         img.onerror = () => reject(new Error("Image illisible"));
@@ -149,6 +152,12 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     setSizeRows((prev) => prev.filter((_, idx) => idx !== i));
   }
 
+  async function generateBarcodesForProduct(productId: string, sizes: Sizes) {
+    for (const size of Object.keys(sizes)) {
+      await supabase.rpc("generate_barcode", { p_product_id: productId, p_size: size });
+    }
+  }
+
   async function save() {
     if (!form.name.trim()) { alert("Le nom du produit est obligatoire"); return; }
 
@@ -177,19 +186,40 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
     };
 
     let error;
+    let productId = editingId;
     if (editingId) {
       ({ error } = await supabase.from("products").update(payload).eq("id", editingId));
     } else {
-      ({ error } = await supabase.from("products").insert(payload));
+      const { data, error: insErr } = await supabase.from("products").insert(payload).select("id").single();
+      error = insErr;
+      productId = data?.id || null;
     }
-    setSaving(false);
-    if (error) { alert("Erreur : " + error.message); return; }
+    if (error) { setSaving(false); alert("Erreur : " + error.message); return; }
 
+    if (productId) {
+      await generateBarcodesForProduct(productId, sizes);
+    }
+
+    setSaving(false);
     setForm(emptyForm);
     setSizeRows([{ size: "", qty: "" }]);
     setEditingId(null);
     setShowForm(false);
     refresh();
+  }
+
+  async function showBarcodes(p: Product) {
+    await generateBarcodesForProduct(p.id, p.sizes);
+    const { data } = await supabase
+      .from("barcodes")
+      .select("size, code")
+      .eq("product_id", p.id);
+    const entries = (data || []).map((b) => ({
+      size: b.size,
+      code: b.code,
+      qty: p.sizes[b.size] || 0,
+    }));
+    setBarcodeModal({ name: p.name, entries });
   }
 
   async function archive(id: string, name: string) {
@@ -255,8 +285,6 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
               <input className={input} value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Couleur</label>
               <input className={input} value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} /></div>
-            <div><label className="text-sm font-medium block mb-1">Code-barres</label>
-              <input className={input} value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Prix d&apos;achat (MAD)</label>
               <input type="number" inputMode="decimal" className={input} value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Prix de vente (MAD)</label>
@@ -267,6 +295,7 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
 
           <div className="mb-4">
             <label className="text-sm font-medium block mb-2">Tailles et quantités *</label>
+            <p className="text-xs text-neutral-500 mb-2">Un code-barres unique sera généré automatiquement pour chaque taille.</p>
             <datalist id="size-list">{COMMON_SIZES.map((s) => <option key={s} value={s} />)}</datalist>
             <div className="space-y-2">
               {sizeRows.map((row, i) => (
@@ -315,12 +344,13 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
                     {Object.entries(p.sizes || {}).map(([s, q]) => `${s}:${q}`).join("  ") || "Pas de stock"}
                   </div>
                   <div className="text-sm mt-1">{fmt(p.sell_price)} MAD · <span className={total <= p.low_stock_threshold ? "text-red-600" : ""}>{total} total</span></div>
-                  <div className="flex gap-3 mt-2">
+                  <div className="flex gap-3 mt-2 flex-wrap">
                     {p.archived ? (
                       <button onClick={() => unarchive(p.id)} className="text-green-600 text-xs font-medium">Réactiver</button>
                     ) : (
                       <>
                         <button onClick={() => openEdit(p)} className="text-blue-600 text-xs font-medium">Modifier</button>
+                        <button onClick={() => showBarcodes(p)} className="text-purple-600 text-xs font-medium">Codes-barres</button>
                         <button onClick={() => archive(p.id, p.name)} className="text-orange-600 text-xs font-medium">Archiver</button>
                       </>
                     )}
@@ -376,6 +406,7 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
                       ) : (
                         <>
                           <button onClick={() => openEdit(p)} className="text-blue-600 text-xs hover:underline mr-3">Modifier</button>
+                          <button onClick={() => showBarcodes(p)} className="text-purple-600 text-xs hover:underline mr-3">Codes-barres</button>
                           <button onClick={() => archive(p.id, p.name)} className="text-orange-600 text-xs hover:underline">Archiver</button>
                         </>
                       )}
@@ -387,6 +418,14 @@ export default function ProduitsClient({ initialProducts }: { initialProducts: P
           </tbody>
         </table>
       </div>
+
+      {barcodeModal && (
+        <BarcodeModal
+          productName={barcodeModal.name}
+          entries={barcodeModal.entries}
+          onClose={() => setBarcodeModal(null)}
+        />
+      )}
     </div>
   );
 }
