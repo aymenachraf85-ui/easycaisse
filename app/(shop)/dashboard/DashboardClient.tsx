@@ -15,9 +15,12 @@ type Stats = {
   today_revenue?: number;
   today_count?: number;
   today_profit?: number;
+  today_expenses?: number;
   week_revenue?: number;
   month_revenue?: number;
   month_profit?: number;
+  month_expenses?: number;
+  suppliers_due?: number;
   stock_value?: number;
   top_products?: TopProduct[];
   low_stock?: LowStock[];
@@ -25,10 +28,7 @@ type Stats = {
 };
 
 function fmt(n: number | undefined) {
-  return (Number(n) || 0).toLocaleString("fr-FR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }) + " MAD";
+  return (Number(n) || 0).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " MAD";
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -44,26 +44,45 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
   const priceChanges = stats.price_changes || [];
   const maxQty = topProducts.length ? Math.max(...topProducts.map((t) => t.qty)) : 1;
 
+  // Bénéfices nets = profit brut - dépenses
+  const todayNet = (stats.today_profit || 0) - (stats.today_expenses || 0);
+  const monthNet = (stats.month_profit || 0) - (stats.month_expenses || 0);
+
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Tableau de bord</h1>
 
-      {/* Cartes principales */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard label="Ventes aujourd'hui" value={fmt(stats.today_revenue)} sub={`${stats.today_count || 0} vente(s)`} />
-        <StatCard label="Profit aujourd'hui" value={fmt(stats.today_profit)} highlight />
-        <StatCard label="Ventes cette semaine" value={fmt(stats.week_revenue)} />
-        <StatCard label="Ventes ce mois" value={fmt(stats.month_revenue)} sub={`Profit : ${fmt(stats.month_profit)}`} />
+      {/* Aujourd'hui */}
+      <h2 className="text-sm font-semibold text-neutral-500 uppercase mb-2">Aujourd&apos;hui</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Ventes" value={fmt(stats.today_revenue)} sub={`${stats.today_count || 0} vente(s)`} />
+        <StatCard label="Profit brut" value={fmt(stats.today_profit)} />
+        <StatCard label="Dépenses" value={fmt(stats.today_expenses)} negative />
+        <StatCard label="Bénéfice net" value={fmt(todayNet)} highlight={todayNet >= 0} danger={todayNet < 0} />
+      </div>
+
+      {/* Ce mois */}
+      <h2 className="text-sm font-semibold text-neutral-500 uppercase mb-2">Ce mois</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Ventes" value={fmt(stats.month_revenue)} />
+        <StatCard label="Profit brut" value={fmt(stats.month_profit)} />
+        <StatCard label="Dépenses" value={fmt(stats.month_expenses)} negative />
+        <StatCard label="Bénéfice net" value={fmt(monthNet)} highlight={monthNet >= 0} danger={monthNet < 0} />
+      </div>
+
+      {/* Situation */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+        <div className="bg-white border border-neutral-200 rounded-xl p-5">
+          <div className="text-xs text-neutral-500">Valeur du stock (prix d&apos;achat)</div>
+          <div className="text-2xl font-bold mt-1">{fmt(stats.stock_value)}</div>
+        </div>
+        <div className="bg-white border border-red-200 rounded-xl p-5">
+          <div className="text-xs text-neutral-500">Total dû aux fournisseurs</div>
+          <div className="text-2xl font-bold mt-1 text-red-600">{fmt(stats.suppliers_due)}</div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Valeur du stock */}
-        <div className="bg-white border border-neutral-200 rounded-xl p-5">
-          <h2 className="font-semibold mb-1">Valeur du stock</h2>
-          <p className="text-sm text-neutral-500 mb-3">Estimée au prix d&apos;achat</p>
-          <p className="text-3xl font-bold">{fmt(stats.stock_value)}</p>
-        </div>
-
         {/* Top produits */}
         <div className="bg-white border border-neutral-200 rounded-xl p-5">
           <h2 className="font-semibold mb-3">Articles les plus vendus <span className="text-xs text-neutral-400 font-normal">(30 j)</span></h2>
@@ -106,7 +125,7 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
         </div>
 
         {/* Historique changements de prix */}
-        <div className="bg-white border border-neutral-200 rounded-xl p-5">
+        <div className="bg-white border border-neutral-200 rounded-xl p-5 lg:col-span-2">
           <h2 className="font-semibold mb-3">Changements de prix récents</h2>
           {priceChanges.length === 0 ? (
             <p className="text-sm text-neutral-400">Aucun changement de prix enregistré.</p>
@@ -134,12 +153,19 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
   );
 }
 
-function StatCard({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: boolean }) {
+function StatCard({ label, value, sub, highlight, negative, danger }: {
+  label: string; value: string; sub?: string; highlight?: boolean; negative?: boolean; danger?: boolean;
+}) {
+  let cls = "bg-white border-neutral-200";
+  let valCls = "";
+  if (highlight) { cls = "bg-emerald-600 border-emerald-600 text-white"; }
+  if (danger) { cls = "bg-red-600 border-red-600 text-white"; }
+  if (negative) { valCls = "text-red-600"; }
   return (
-    <div className={`rounded-xl p-4 border ${highlight ? "bg-neutral-900 text-white border-neutral-900" : "bg-white border-neutral-200"}`}>
-      <p className={`text-xs ${highlight ? "text-neutral-300" : "text-neutral-500"}`}>{label}</p>
-      <p className="text-xl font-bold mt-1">{value}</p>
-      {sub ? <p className={`text-xs mt-0.5 ${highlight ? "text-neutral-400" : "text-neutral-400"}`}>{sub}</p> : null}
+    <div className={`rounded-xl p-4 border ${cls}`}>
+      <p className={`text-xs ${highlight || danger ? "text-white/80" : "text-neutral-500"}`}>{label}</p>
+      <p className={`text-xl font-bold mt-1 ${valCls}`}>{value}</p>
+      {sub ? <p className={`text-xs mt-0.5 ${highlight || danger ? "text-white/70" : "text-neutral-400"}`}>{sub}</p> : null}
     </div>
   );
 }
