@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 type TicketItem = {
   name: string;
@@ -39,11 +39,12 @@ export default function Ticket({
   onClose: () => void;
   onWidthChange: (w: 58 | 80) => void;
 }) {
-  // Impression automatique dès l'affichage du ticket
+  const printedRef = useRef(false);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      window.print();
-    }, 300); // petit délai pour que le ticket soit bien rendu
+    if (printedRef.current) return;   // empêche la double impression
+    printedRef.current = true;
+    const timer = setTimeout(() => window.print(), 400);
     return () => clearTimeout(timer);
   }, []);
 
@@ -64,24 +65,24 @@ export default function Ticket({
             className="bg-white text-black font-mono"
             style={{
               width: width === 58 ? "58mm" : "80mm",
-              padding: "4mm",
+              padding: "3mm",
               fontSize: width === 58 ? "10px" : "11px",
-              lineHeight: 1.4,
+              lineHeight: 1.35,
             }}
           >
             <div style={{ textAlign: "center", fontWeight: "bold", fontSize: width === 58 ? "13px" : "15px", marginBottom: "2mm" }}>
               {data.shopName}
             </div>
-            <div style={{ textAlign: "center", fontSize: "9px", marginBottom: "3mm" }}>
+            <div style={{ textAlign: "center", fontSize: "9px", marginBottom: "2mm" }}>
               {data.date.toLocaleDateString("fr-FR")} {data.date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
             </div>
 
-            <div style={{ borderTop: "1px dashed #000", borderBottom: "1px dashed #000", padding: "2mm 0", marginBottom: "2mm" }}>
+            <div style={{ borderTop: "1px dashed #000", borderBottom: "1px dashed #000", padding: "1.5mm 0", marginBottom: "1.5mm" }}>
               N° {data.saleId.slice(0, 8).toUpperCase()}
             </div>
 
             {data.items.map((item, i) => (
-              <div key={i} style={{ marginBottom: "1.5mm" }}>
+              <div key={i} style={{ marginBottom: "1.2mm" }}>
                 <div>{item.name}{item.size ? ` (${item.size})` : ""}</div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>{item.quantity} x {fmt(item.sold_price)}</span>
@@ -90,16 +91,16 @@ export default function Ticket({
               </div>
             ))}
 
-            <div style={{ borderTop: "1px solid #000", marginTop: "2mm", paddingTop: "2mm", display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: width === 58 ? "12px" : "14px" }}>
+            <div style={{ borderTop: "1px solid #000", marginTop: "1.5mm", paddingTop: "1.5mm", display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: width === 58 ? "12px" : "14px" }}>
               <span>TOTAL</span>
               <span>{fmt(data.total)} MAD</span>
             </div>
 
-            <div style={{ marginTop: "2mm", fontSize: "9px" }}>
+            <div style={{ marginTop: "1.5mm", fontSize: "9px" }}>
               Paiement : {PAYMENT_LABELS[data.payment] || data.payment}
             </div>
 
-            <div style={{ textAlign: "center", marginTop: "4mm", fontSize: "9px" }}>
+            <div style={{ textAlign: "center", marginTop: "3mm", fontSize: "9px" }}>
               Merci de votre visite !
             </div>
           </div>
@@ -113,9 +114,24 @@ export default function Ticket({
 
       <style jsx global>{`
         @media print {
+          /* Page = largeur du ticket, hauteur automatique : plus de papier gaspillé */
+          @page {
+            size: ${width}mm auto;
+            margin: 0;
+          }
+          html, body {
+            width: ${width}mm;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
           body * { visibility: hidden; }
           #ticket-print-area, #ticket-print-area * { visibility: visible; }
-          #ticket-print-area { position: absolute; left: 0; top: 0; }
+          #ticket-print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: ${width}mm;
+          }
         }
       `}</style>
     </div>
