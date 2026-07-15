@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Ticket, { TicketData } from "./Ticket";
+import NumPad from "../NumPad";
 
 type Sizes = Record<string, number>;
 
@@ -40,16 +41,15 @@ const REASONS = [
   { value: "deal_special", label: "Deal spécial" },
 ];
 
-// Palette de couleurs attribuées aux catégories (dans l'ordre)
 const CATEGORY_COLORS = [
-  { bg: "bg-blue-500", light: "bg-blue-50", border: "border-blue-400", text: "text-blue-700", bar: "#3b82f6" },
-  { bg: "bg-pink-500", light: "bg-pink-50", border: "border-pink-400", text: "text-pink-700", bar: "#ec4899" },
-  { bg: "bg-amber-500", light: "bg-amber-50", border: "border-amber-400", text: "text-amber-700", bar: "#f59e0b" },
-  { bg: "bg-emerald-500", light: "bg-emerald-50", border: "border-emerald-400", text: "text-emerald-700", bar: "#10b981" },
-  { bg: "bg-purple-500", light: "bg-purple-50", border: "border-purple-400", text: "text-purple-700", bar: "#a855f7" },
-  { bg: "bg-red-500", light: "bg-red-50", border: "border-red-400", text: "text-red-700", bar: "#ef4444" },
-  { bg: "bg-cyan-500", light: "bg-cyan-50", border: "border-cyan-400", text: "text-cyan-700", bar: "#06b6d4" },
-  { bg: "bg-orange-500", light: "bg-orange-50", border: "border-orange-400", text: "text-orange-700", bar: "#f97316" },
+  { bg: "bg-blue-500", light: "bg-blue-50", border: "border-blue-400", text: "text-blue-700" },
+  { bg: "bg-pink-500", light: "bg-pink-50", border: "border-pink-400", text: "text-pink-700" },
+  { bg: "bg-amber-500", light: "bg-amber-50", border: "border-amber-400", text: "text-amber-700" },
+  { bg: "bg-emerald-500", light: "bg-emerald-50", border: "border-emerald-400", text: "text-emerald-700" },
+  { bg: "bg-purple-500", light: "bg-purple-50", border: "border-purple-400", text: "text-purple-700" },
+  { bg: "bg-red-500", light: "bg-red-50", border: "border-red-400", text: "text-red-700" },
+  { bg: "bg-cyan-500", light: "bg-cyan-50", border: "border-cyan-400", text: "text-cyan-700" },
+  { bg: "bg-orange-500", light: "bg-orange-50", border: "border-orange-400", text: "text-orange-700" },
 ];
 
 function fmt(n: number) {
@@ -78,6 +78,9 @@ export default function CaisseClient({
 
   const [sizePickProduct, setSizePickProduct] = useState<Product | null>(null);
 
+  // Pavé numérique : quelle ligne du panier on édite
+  const [padKey, setPadKey] = useState<string | null>(null);
+
   const [ticket, setTicket] = useState<TicketData | null>(null);
   const [ticketWidth, setTicketWidth] = useState<58 | 80>(80);
 
@@ -99,7 +102,6 @@ export default function CaisseClient({
     return ["Tous", ...Array.from(set)];
   }, [products]);
 
-  // Attribue une couleur à chaque catégorie
   const categoryColor = useMemo(() => {
     const map = new Map<string, typeof CATEGORY_COLORS[0]>();
     categories.filter((c) => c !== "Tous").forEach((c, i) => {
@@ -157,22 +159,10 @@ export default function CaisseClient({
   useEffect(() => {
     function handleScan(code: string) {
       const found = barcodeMap.get(code.trim());
-      if (!found) {
-        setScanFeedback(`Code inconnu : ${code}`);
-        setTimeout(() => setScanFeedback(null), 2000);
-        return;
-      }
+      if (!found) { setScanFeedback(`Code inconnu : ${code}`); setTimeout(() => setScanFeedback(null), 2000); return; }
       const product = productMap.get(found.product_id);
-      if (!product) {
-        setScanFeedback("Produit introuvable");
-        setTimeout(() => setScanFeedback(null), 2000);
-        return;
-      }
-      if (sizeLeft(product, found.size) <= 0) {
-        setScanFeedback(`${product.name} (${found.size}) — épuisé`);
-        setTimeout(() => setScanFeedback(null), 2000);
-        return;
-      }
+      if (!product) { setScanFeedback("Produit introuvable"); setTimeout(() => setScanFeedback(null), 2000); return; }
+      if (sizeLeft(product, found.size) <= 0) { setScanFeedback(`${product.name} (${found.size}) — épuisé`); setTimeout(() => setScanFeedback(null), 2000); return; }
       addToCart(product, found.size);
       setScanFeedback(`✓ ${product.name} (${found.size})`);
       setTimeout(() => setScanFeedback(null), 1500);
@@ -181,13 +171,8 @@ export default function CaisseClient({
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
-
       if (e.key === "Enter") {
-        if (scanBuffer.current.length >= 6) {
-          handleScan(scanBuffer.current);
-          scanBuffer.current = "";
-          e.preventDefault();
-        }
+        if (scanBuffer.current.length >= 6) { handleScan(scanBuffer.current); scanBuffer.current = ""; e.preventDefault(); }
         return;
       }
       if (e.key.length === 1 && !isInput) {
@@ -208,12 +193,13 @@ export default function CaisseClient({
   function removeLine(key: string) {
     setCart((prev) => prev.filter((c) => c.key !== key));
   }
-  function changePrice(key: string, text: string) {
+  function setPrice(key: string, text: string) {
     setCart((prev) => prev.map((c) => c.key === key ? { ...c, sold_price_text: text, sold_price: Number(text) || 0 } : c));
   }
 
   const total = cart.reduce((s, c) => s + c.sold_price * c.quantity, 0);
   const cartCount = cart.reduce((s, c) => s + c.quantity, 0);
+  const padLine = padKey ? cart.find((c) => c.key === padKey) : null;
 
   async function refreshProducts() {
     const { data } = await supabase.from("products").select("*").eq("archived", false).order("name", { ascending: true });
@@ -264,7 +250,11 @@ export default function CaisseClient({
                   <span className="px-2 text-sm w-8 text-center">{c.quantity}</span>
                   <button onClick={() => updateLine(c.key, { quantity: Math.min(c.max_stock, c.quantity + 1) })} className="px-3 py-1.5 text-neutral-600 font-bold">+</button>
                 </div>
-                <input type="number" inputMode="decimal" value={c.sold_price_text} onChange={(e) => changePrice(c.key, e.target.value)} className="w-20 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
+                {/* Prix : ouvre le pavé numérique au clic */}
+                <button onClick={() => setPadKey(c.key)}
+                  className="flex-1 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm text-right font-medium bg-white">
+                  {c.sold_price_text || "0"} MAD
+                </button>
               </div>
               {c.sold_price !== c.original_price && (
                 <div className="mt-2">
@@ -328,12 +318,8 @@ export default function CaisseClient({
               <button key={c} onClick={() => setCategory(c)}
                 className={`shrink-0 px-4 py-1.5 rounded-full text-sm font-medium border ${
                   active
-                    ? c === "Tous"
-                      ? "bg-neutral-900 text-white border-neutral-900"
-                      : `${col?.bg} text-white ${col?.border}`
-                    : c === "Tous"
-                      ? "bg-white text-neutral-700 border-neutral-200"
-                      : `${col?.light} ${col?.text} ${col?.border}`
+                    ? c === "Tous" ? "bg-neutral-900 text-white border-neutral-900" : `${col?.bg} text-white ${col?.border}`
+                    : c === "Tous" ? "bg-white text-neutral-700 border-neutral-200" : `${col?.light} ${col?.text} ${col?.border}`
                 }`}>
                 {c}
               </button>
@@ -353,7 +339,6 @@ export default function CaisseClient({
               return (
                 <button key={p.id} onClick={() => onProductClick(p)} disabled={left <= 0}
                   className="text-left bg-white border border-neutral-200 rounded-xl overflow-hidden hover:border-neutral-400 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed">
-                  {/* Bande de couleur de la catégorie */}
                   <div className={`h-1.5 w-full ${col?.bg || "bg-neutral-200"}`}></div>
                   <div className="p-3">
                     <div className="w-full aspect-square rounded-lg bg-neutral-50 mb-2 overflow-hidden flex items-center justify-center">
@@ -419,6 +404,15 @@ export default function CaisseClient({
           </div>
         </div>
       )}
+
+      {/* Pavé numérique pour le prix */}
+      <NumPad
+        open={padKey !== null}
+        initialValue={padLine?.sold_price_text || ""}
+        label={padLine ? `Prix — ${padLine.name} (${padLine.size})` : "Prix"}
+        onConfirm={(v) => { if (padKey) setPrice(padKey, v); }}
+        onClose={() => setPadKey(null)}
+      />
 
       {ticket && (
         <Ticket data={ticket} width={ticketWidth} onWidthChange={setTicketWidth} onClose={() => setTicket(null)} />

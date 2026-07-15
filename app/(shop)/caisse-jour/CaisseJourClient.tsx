@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import NumPad from "../NumPad";
 
 type Expense = {
   id: string;
@@ -33,14 +34,14 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
   const [summary, setSummary] = useState<Summary>(initialSummary);
   const [busy, setBusy] = useState(false);
 
-  // Ouverture
   const [openingAmount, setOpeningAmount] = useState("");
-  // Clôture
   const [closingAmount, setClosingAmount] = useState("");
-  // Dépense
   const [expCategory, setExpCategory] = useState("Loyer");
   const [expAmount, setExpAmount] = useState("");
   const [expDesc, setExpDesc] = useState("");
+
+  // Quel champ le pavé numérique édite : 'opening' | 'closing' | 'expense' | null
+  const [pad, setPad] = useState<null | "opening" | "closing" | "expense">(null);
 
   async function refresh() {
     const { data } = await supabase.rpc("cash_day_summary");
@@ -94,24 +95,25 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
     refresh();
   }
 
-  // Ce qui devrait être dans le tiroir (espèces)
   const expectedCash = (summary.opening_amount || 0) + (summary.cash_sales || 0) - (summary.expenses_today || 0);
   const difference = closingAmount ? Number(closingAmount) - expectedCash : null;
 
   const input = "border border-neutral-300 rounded-lg px-3 py-2 w-full";
+  // Champ "faux input" qui ouvre le pavé au clic
+  const padField = "border border-neutral-300 rounded-lg px-3 py-2 w-full text-left bg-white cursor-pointer";
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">Caisse du jour</h1>
 
-      {/* État de la session */}
       {!summary.session_open ? (
         <div className="bg-white border border-neutral-200 rounded-xl p-5 mb-4">
           <h2 className="font-semibold mb-2">Ouvrir la caisse</h2>
           <p className="text-sm text-neutral-500 mb-3">Saisissez le fond de caisse (argent présent dans le tiroir au début).</p>
           <div className="flex gap-2">
-            <input type="number" inputMode="decimal" placeholder="Montant du fond (MAD)" value={openingAmount}
-              onChange={(e) => setOpeningAmount(e.target.value)} className={input} />
+            <button onClick={() => setPad("opening")} className={padField}>
+              {openingAmount ? `${openingAmount} MAD` : <span className="text-neutral-400">Montant du fond (MAD)</span>}
+            </button>
             <button onClick={openSession} disabled={busy} className="bg-emerald-600 text-white rounded-lg px-6 py-2 font-semibold whitespace-nowrap disabled:opacity-50">
               Ouvrir
             </button>
@@ -131,7 +133,6 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
 
       {summary.session_open && (
         <>
-          {/* Résumé chiffré */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <div className="bg-white border border-neutral-200 rounded-xl p-4">
               <div className="text-xs text-neutral-500">Fond initial</div>
@@ -151,23 +152,22 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
             </div>
           </div>
 
-          {/* Ajout de dépense */}
           <div className="bg-white border border-neutral-200 rounded-xl p-5 mb-4">
             <h2 className="font-semibold mb-3">Ajouter une dépense</h2>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
               <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} className={input}>
                 {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
-              <input type="number" inputMode="decimal" placeholder="Montant" value={expAmount}
-                onChange={(e) => setExpAmount(e.target.value)} className={input} />
+              <button onClick={() => setPad("expense")} className={padField}>
+                {expAmount ? `${expAmount} MAD` : <span className="text-neutral-400">Montant</span>}
+              </button>
               <input type="text" placeholder="Description (optionnel)" value={expDesc}
-                onChange={(e) => setExpDesc(e.target.value)} className={`${input} sm:col-span-1`} />
+                onChange={(e) => setExpDesc(e.target.value)} className={input} />
               <button onClick={addExpense} disabled={busy} className="bg-neutral-900 text-white rounded-lg px-4 py-2 font-medium disabled:opacity-50">
                 Ajouter
               </button>
             </div>
 
-            {/* Liste des dépenses du jour */}
             {summary.expenses_list && summary.expenses_list.length > 0 && (
               <div className="mt-4 space-y-2">
                 {summary.expenses_list.map((exp) => (
@@ -186,13 +186,13 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
             )}
           </div>
 
-          {/* Clôture */}
           <div className="bg-white border border-neutral-200 rounded-xl p-5">
             <h2 className="font-semibold mb-2">Clôturer la caisse</h2>
             <p className="text-sm text-neutral-500 mb-3">Comptez l&apos;argent réel dans le tiroir et saisissez-le pour vérifier.</p>
             <div className="flex gap-2 mb-3">
-              <input type="number" inputMode="decimal" placeholder="Montant compté (MAD)" value={closingAmount}
-                onChange={(e) => setClosingAmount(e.target.value)} className={input} />
+              <button onClick={() => setPad("closing")} className={padField}>
+                {closingAmount ? `${closingAmount} MAD` : <span className="text-neutral-400">Montant compté (MAD)</span>}
+              </button>
               <button onClick={closeSession} disabled={busy} className="bg-red-600 text-white rounded-lg px-6 py-2 font-semibold whitespace-nowrap disabled:opacity-50">
                 Clôturer
               </button>
@@ -209,6 +209,29 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
           </div>
         </>
       )}
+
+      {/* Pavé numérique */}
+      <NumPad
+        open={pad === "opening"}
+        initialValue={openingAmount}
+        label="Fond de caisse"
+        onConfirm={(v) => setOpeningAmount(v)}
+        onClose={() => setPad(null)}
+      />
+      <NumPad
+        open={pad === "closing"}
+        initialValue={closingAmount}
+        label="Montant compté"
+        onConfirm={(v) => setClosingAmount(v)}
+        onClose={() => setPad(null)}
+      />
+      <NumPad
+        open={pad === "expense"}
+        initialValue={expAmount}
+        label="Montant de la dépense"
+        onConfirm={(v) => setExpAmount(v)}
+        onClose={() => setPad(null)}
+      />
     </div>
   );
 }

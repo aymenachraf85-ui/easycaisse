@@ -1,9 +1,30 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import JsBarcode from "jsbarcode";
 
 type BarcodeEntry = { size: string; code: string; qty: number };
+
+function buildLabels(entries: BarcodeEntry[]) {
+  const labels: { size: string; code: string; uid: string }[] = [];
+  entries.forEach((entry) => {
+    for (let i = 0; i < entry.qty; i++) {
+      labels.push({ size: entry.size, code: entry.code, uid: `${entry.code}-${i}` });
+    }
+  });
+  return labels;
+}
+
+// Génère le SVG d'un code-barres et renvoie son code HTML
+function barcodeSVG(code: string): string {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  try {
+    JsBarcode(svg, code, { format: "CODE128", width: 2, height: 55, fontSize: 16, margin: 0 });
+  } catch {
+    return "";
+  }
+  return new XMLSerializer().serializeToString(svg);
+}
 
 export default function BarcodeModal({
   productName,
@@ -14,123 +35,99 @@ export default function BarcodeModal({
   entries: BarcodeEntry[];
   onClose: () => void;
 }) {
+  const labels = buildLabels(entries);
+
+  // Aperçu écran
   useEffect(() => {
-    entries.forEach((entry) => {
-      for (let i = 0; i < entry.qty; i++) {
-        const svg = document.getElementById(`barcode-${entry.code}-${i}`);
-        if (svg) {
-          try {
-            JsBarcode(svg, entry.code, {
-              format: "CODE128",
-              width: 2,
-              height: 60,
-              fontSize: 16,
-              margin: 0,
-              displayValue: true,
-            });
-          } catch {}
-        }
+    labels.forEach((label) => {
+      const svg = document.getElementById(`bc-${label.uid}`);
+      if (svg) {
+        try {
+          JsBarcode(svg, label.code, { format: "CODE128", width: 2, height: 50, fontSize: 16, margin: 0 });
+        } catch {}
       }
     });
-  }, [entries]);
+  }, [labels]);
 
-  const totalLabels = entries.reduce((s, e) => s + e.qty, 0);
+  // Impression : ouvre une fenêtre HTML pure, 1 étiquette = 1 page
+  function printLabels() {
+    const win = window.open("", "_blank", "width=400,height=600");
+    if (!win) { alert("Autorisez les pop-ups pour imprimer."); return; }
+
+    const labelsHTML = labels.map((label) => `
+      <div class="label">
+        <div class="name">${productName}</div>
+        <div class="size">Taille ${label.size}</div>
+        ${barcodeSVG(label.code)}
+      </div>
+    `).join("");
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Étiquettes</title>
+        <style>
+          @page { size: 80mm 80mm; margin: 0; }
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: sans-serif; }
+          .label {
+            width: 80mm;
+            height: 80mm;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            page-break-after: always;
+            overflow: hidden;
+            padding: 4mm;
+          }
+          .label:last-child { page-break-after: auto; }
+          .name { font-size: 15px; font-weight: 700; text-align: center; margin-bottom: 2mm; }
+          .size { font-size: 13px; text-align: center; margin-bottom: 3mm; }
+          .label svg { max-width: 72mm; }
+        </style>
+      </head>
+      <body>
+        ${labelsHTML}
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function(){ window.close(); }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    win.document.close();
+  }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print:bg-white print:p-0 print:block print:static">
-      <div className="bg-white rounded-xl max-w-md w-full max-h-[85vh] overflow-y-auto print:max-w-none print:max-h-none print:overflow-visible print:rounded-none">
-        <div className="flex items-center justify-between p-4 border-b border-neutral-200 print:hidden">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl max-w-md w-full max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b border-neutral-200">
           <div>
             <h3 className="font-semibold">Codes-barres — {productName}</h3>
-            <p className="text-xs text-neutral-500">{totalLabels} étiquette(s) · 80×80mm</p>
+            <p className="text-xs text-neutral-500">{labels.length} étiquette(s) · 1 code par étiquette</p>
           </div>
           <button onClick={onClose} className="text-neutral-500 text-xl">✕</button>
         </div>
 
-        <div id="labels-print-area" className="p-4 print:p-0">
-          {entries.length === 0 ? (
-            <p className="text-sm text-neutral-400">Aucun code-barres.</p>
-          ) : (
-            entries.flatMap((entry) =>
-              Array.from({ length: Math.max(0, entry.qty) }).map((_, i) => (
-                <div key={`${entry.code}-${i}`} className="label-item border border-neutral-200 rounded-lg mb-2 print:border-0 print:rounded-none print:mb-0">
-                  <div className="label-inner">
-                    <div className="label-name">{productName}</div>
-                    <div className="label-size">Taille {entry.size}</div>
-                    <svg id={`barcode-${entry.code}-${i}`}></svg>
-                  </div>
-                </div>
-              ))
-            )
-          )}
+        <div className="p-4 grid grid-cols-2 gap-2">
+          {labels.map((label) => (
+            <div key={label.uid} className="border border-neutral-200 rounded-lg p-2 text-center">
+              <div className="text-xs font-semibold truncate">{productName}</div>
+              <div className="text-xs mb-1">Taille {label.size}</div>
+              <svg id={`bc-${label.uid}`}></svg>
+            </div>
+          ))}
         </div>
 
-        <div className="flex gap-2 p-4 border-t border-neutral-200 print:hidden">
+        <div className="flex gap-2 p-4 border-t border-neutral-200">
           <button onClick={onClose} className="flex-1 border border-neutral-300 rounded-lg py-2.5 font-medium">Fermer</button>
-          <button onClick={() => window.print()} className="flex-1 bg-neutral-900 text-white rounded-lg py-2.5 font-medium">Imprimer les étiquettes</button>
+          <button onClick={printLabels} className="flex-1 bg-neutral-900 text-white rounded-lg py-2.5 font-medium">Imprimer</button>
         </div>
       </div>
-
-      <style jsx global>{`
-        .label-inner {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          padding: 4mm;
-        }
-        .label-name {
-          font-size: 13px;
-          font-weight: 700;
-          margin-bottom: 1mm;
-          max-width: 72mm;
-          overflow: hidden;
-          white-space: nowrap;
-          text-overflow: ellipsis;
-        }
-        .label-size {
-          font-size: 12px;
-          margin-bottom: 2mm;
-        }
-
-        @media print {
-          /* Une étiquette = une page de 80x80mm */
-          @page {
-            size: 80mm 80mm;
-            margin: 0;
-          }
-          html, body {
-            width: 80mm;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #fff !important;
-          }
-          body * { visibility: hidden !important; }
-          #labels-print-area,
-          #labels-print-area * { visibility: visible !important; }
-          #labels-print-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 80mm !important;
-          }
-          .label-item {
-            width: 80mm;
-            height: 80mm;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            page-break-after: always;
-            break-after: page;
-            overflow: hidden;
-          }
-          .label-item:last-child {
-            page-break-after: auto;
-            break-after: auto;
-          }
-        }
-      `}</style>
     </div>
   );
 }
