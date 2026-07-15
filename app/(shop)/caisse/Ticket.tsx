@@ -24,6 +24,12 @@ const PAYMENT_LABELS: Record<string, string> = {
   transfer: "Virement",
 };
 
+// ===== INFOS BOUTIQUE (modifiez ici) =====
+const LOGO_URL = "https://xpalncbwqlacjikxahwe.supabase.co/storage/v1/object/public/product-images/images%20(2)-Photoroom.png";
+const INSTAGRAM = "@amstorecasa2";
+const PHONE = "0625308920";
+// ==========================================
+
 function fmt(n: number) {
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -42,7 +48,7 @@ export default function Ticket({
   const printedRef = useRef(false);
 
   useEffect(() => {
-    if (printedRef.current) return;   // empêche la double impression
+    if (printedRef.current) return;
     printedRef.current = true;
     const timer = setTimeout(() => window.print(), 400);
     return () => clearTimeout(timer);
@@ -70,9 +76,27 @@ export default function Ticket({
               lineHeight: 1.35,
             }}
           >
-            <div style={{ textAlign: "center", fontWeight: "bold", fontSize: width === 58 ? "13px" : "15px", marginBottom: "2mm" }}>
+            {/* Logo */}
+            {LOGO_URL ? (
+              <div style={{ textAlign: "center", marginBottom: "2mm" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={LOGO_URL} alt="logo" style={{ maxWidth: "40mm", maxHeight: "20mm", margin: "0 auto", filter: "grayscale(100%) contrast(150%)" }} />
+              </div>
+            ) : null}
+
+            {/* Nom boutique */}
+            <div style={{ textAlign: "center", fontWeight: "bold", fontSize: width === 58 ? "13px" : "15px", marginBottom: "1mm" }}>
               {data.shopName}
             </div>
+
+            {/* Contact */}
+            <div style={{ textAlign: "center", fontSize: "9px", marginBottom: "1mm" }}>
+              Instagram : {INSTAGRAM}
+            </div>
+            <div style={{ textAlign: "center", fontSize: "9px", marginBottom: "2mm" }}>
+              Tél : {PHONE}
+            </div>
+
             <div style={{ textAlign: "center", fontSize: "9px", marginBottom: "2mm" }}>
               {data.date.toLocaleDateString("fr-FR")} {data.date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
             </div>
@@ -103,6 +127,9 @@ export default function Ticket({
             <div style={{ textAlign: "center", marginTop: "3mm", fontSize: "9px" }}>
               Merci de votre visite !
             </div>
+            <div style={{ textAlign: "center", marginTop: "1mm", fontSize: "8px" }}>
+              Suivez-nous sur Instagram {INSTAGRAM}
+            </div>
           </div>
         </div>
 
@@ -114,24 +141,11 @@ export default function Ticket({
 
       <style jsx global>{`
         @media print {
-          /* Page = largeur du ticket, hauteur automatique : plus de papier gaspillé */
-          @page {
-            size: ${width}mm auto;
-            margin: 0;
-          }
-          html, body {
-            width: ${width}mm;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
+          @page { size: ${width}mm auto; margin: 0; }
+          html, body { width: ${width}mm; margin: 0 !important; padding: 0 !important; }
           body * { visibility: hidden; }
           #ticket-print-area, #ticket-print-area * { visibility: visible; }
-          #ticket-print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: ${width}mm;
-          }
+          #ticket-print-area { position: absolute; left: 0; top: 0; width: ${width}mm; }
         }
       `}</style>
     </div>
