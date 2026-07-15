@@ -35,6 +35,7 @@ export default async function ShopLayout({
             <Link href="/produits" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Produits</Link>
             <Link href="/fournisseurs" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Fournisseurs</Link>
             <Link href="/ventes" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Ventes</Link>
+            <Link href="/rapports" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Rapports</Link>
             <Link href="/dashboard" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Bord</Link>
           </nav>
           <form action="/auth/signout" method="post" className="ml-auto sm:ml-0 shrink-0">
