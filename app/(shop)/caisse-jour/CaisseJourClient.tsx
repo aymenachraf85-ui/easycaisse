@@ -10,7 +10,10 @@ type Expense = {
   amount: number;
   description: string | null;
   created_at: string;
+  employee_name: string | null;
 };
+
+type Employee = { id: string; name: string; active: boolean };
 
 type Summary = {
   session_id?: string | null;
@@ -23,15 +26,22 @@ type Summary = {
   expenses_list?: Expense[];
 };
 
-const EXPENSE_CATEGORIES = ["Loyer", "Salaires", "Électricité", "Eau", "Achats stock", "Transport", "Autre"];
+const EXPENSE_CATEGORIES = ["Loyer", "Salaires", "Électricité", "Eau", "Achats stock", "Transport", "Retrait employé", "Autre"];
 
 function fmt(n: number | undefined) {
   return (Number(n) || 0).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " MAD";
 }
 
-export default function CaisseJourClient({ initialSummary }: { initialSummary: Summary }) {
+export default function CaisseJourClient({
+  initialSummary,
+  initialEmployees,
+}: {
+  initialSummary: Summary;
+  initialEmployees: Employee[];
+}) {
   const supabase = createClient();
   const [summary, setSummary] = useState<Summary>(initialSummary);
+  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [busy, setBusy] = useState(false);
 
   const [openingAmount, setOpeningAmount] = useState("");
@@ -39,21 +49,43 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
   const [expCategory, setExpCategory] = useState("Loyer");
   const [expAmount, setExpAmount] = useState("");
   const [expDesc, setExpDesc] = useState("");
+  const [expEmployee, setExpEmployee] = useState("");
 
-  // Quel champ le pavé numérique édite : 'opening' | 'closing' | 'expense' | null
   const [pad, setPad] = useState<null | "opening" | "closing" | "expense">(null);
+
+  // Gestion employés
+  const [showEmpManager, setShowEmpManager] = useState(false);
+  const [newEmpName, setNewEmpName] = useState("");
 
   async function refresh() {
     const { data } = await supabase.rpc("cash_day_summary");
     setSummary(data || {});
   }
 
+  async function refreshEmployees() {
+    const { data } = await supabase.from("employees").select("id, name, active").eq("active", true).order("name");
+    setEmployees(data || []);
+  }
+
+  async function addEmployee() {
+    if (!newEmpName.trim()) return;
+    setBusy(true);
+    const { error } = await supabase.from("employees").insert({ name: newEmpName.trim() });
+    setBusy(false);
+    if (error) { alert("Erreur : " + error.message); return; }
+    setNewEmpName("");
+    refreshEmployees();
+  }
+
+  async function removeEmployee(id: string) {
+    if (!confirm("Retirer cet employé de la liste ?")) return;
+    await supabase.from("employees").update({ active: false }).eq("id", id);
+    refreshEmployees();
+  }
+
   async function openSession() {
     setBusy(true);
-    const { error } = await supabase.from("cash_sessions").insert({
-      opening_amount: Number(openingAmount) || 0,
-      status: "open",
-    });
+    const { error } = await supabase.from("cash_sessions").insert({ opening_amount: Number(openingAmount) || 0, status: "open" });
     setBusy(false);
     if (error) { alert("Erreur : " + error.message); return; }
     setOpeningAmount("");
@@ -64,9 +96,7 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
     if (!summary.session_id) return;
     setBusy(true);
     const { error } = await supabase.from("cash_sessions").update({
-      closing_amount: Number(closingAmount) || 0,
-      status: "closed",
-      closed_at: new Date().toISOString(),
+      closing_amount: Number(closingAmount) || 0, status: "closed", closed_at: new Date().toISOString(),
     }).eq("id", summary.session_id);
     setBusy(false);
     if (error) { alert("Erreur : " + error.message); return; }
@@ -81,11 +111,11 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
       category: expCategory,
       amount: Number(expAmount),
       description: expDesc.trim() || null,
+      employee_id: expEmployee || null,
     });
     setBusy(false);
     if (error) { alert("Erreur : " + error.message); return; }
-    setExpAmount("");
-    setExpDesc("");
+    setExpAmount(""); setExpDesc(""); setExpEmployee("");
     refresh();
   }
 
@@ -99,12 +129,41 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
   const difference = closingAmount ? Number(closingAmount) - expectedCash : null;
 
   const input = "border border-neutral-300 rounded-lg px-3 py-2 w-full";
-  // Champ "faux input" qui ouvre le pavé au clic
   const padField = "border border-neutral-300 rounded-lg px-3 py-2 w-full text-left bg-white cursor-pointer";
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Caisse du jour</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold">Caisse du jour</h1>
+        <button onClick={() => setShowEmpManager(!showEmpManager)} className="text-sm border border-neutral-300 rounded-lg px-3 py-2 font-medium">
+          {showEmpManager ? "Fermer" : "Gérer les employés"}
+        </button>
+      </div>
+
+      {/* Gestion des employés */}
+      {showEmpManager && (
+        <div className="bg-white border border-neutral-200 rounded-xl p-4 mb-4">
+          <h2 className="font-semibold mb-3">Employés</h2>
+          <div className="flex gap-2 mb-3">
+            <input placeholder="Nom de l'employé" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} className={input} />
+            <button onClick={addEmployee} disabled={busy} className="bg-neutral-900 text-white rounded-lg px-4 py-2 font-medium whitespace-nowrap disabled:opacity-50">
+              Ajouter
+            </button>
+          </div>
+          {employees.length === 0 ? (
+            <p className="text-sm text-neutral-400">Aucun employé.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {employees.map((emp) => (
+                <div key={emp.id} className="flex items-center gap-2 bg-neutral-100 rounded-full pl-3 pr-2 py-1 text-sm">
+                  <span>{emp.name}</span>
+                  <button onClick={() => removeEmployee(emp.id)} className="text-neutral-400 hover:text-red-500">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {!summary.session_open ? (
         <div className="bg-white border border-neutral-200 rounded-xl p-5 mb-4">
@@ -153,20 +212,24 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
           </div>
 
           <div className="bg-white border border-neutral-200 rounded-xl p-5 mb-4">
-            <h2 className="font-semibold mb-3">Ajouter une dépense</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+            <h2 className="font-semibold mb-3">Ajouter une dépense / retrait</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-2">
               <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)} className={input}>
                 {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
               <button onClick={() => setPad("expense")} className={padField}>
                 {expAmount ? `${expAmount} MAD` : <span className="text-neutral-400">Montant</span>}
               </button>
-              <input type="text" placeholder="Description (optionnel)" value={expDesc}
+              <select value={expEmployee} onChange={(e) => setExpEmployee(e.target.value)} className={input}>
+                <option value="">— Employé (optionnel) —</option>
+                {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+              </select>
+              <input type="text" placeholder="Note (optionnel)" value={expDesc}
                 onChange={(e) => setExpDesc(e.target.value)} className={input} />
-              <button onClick={addExpense} disabled={busy} className="bg-neutral-900 text-white rounded-lg px-4 py-2 font-medium disabled:opacity-50">
-                Ajouter
-              </button>
             </div>
+            <button onClick={addExpense} disabled={busy} className="bg-neutral-900 text-white rounded-lg px-4 py-2 font-medium disabled:opacity-50">
+              Ajouter
+            </button>
 
             {summary.expenses_list && summary.expenses_list.length > 0 && (
               <div className="mt-4 space-y-2">
@@ -174,6 +237,7 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
                   <div key={exp.id} className="flex justify-between items-center text-sm border-b border-neutral-100 pb-2">
                     <div>
                       <span className="font-medium">{exp.category}</span>
+                      {exp.employee_name ? <span className="text-blue-600"> · {exp.employee_name}</span> : null}
                       {exp.description ? <span className="text-neutral-500"> — {exp.description}</span> : null}
                     </div>
                     <div className="flex items-center gap-3">
@@ -210,28 +274,12 @@ export default function CaisseJourClient({ initialSummary }: { initialSummary: S
         </>
       )}
 
-      {/* Pavé numérique */}
-      <NumPad
-        open={pad === "opening"}
-        initialValue={openingAmount}
-        label="Fond de caisse"
-        onConfirm={(v) => setOpeningAmount(v)}
-        onClose={() => setPad(null)}
-      />
-      <NumPad
-        open={pad === "closing"}
-        initialValue={closingAmount}
-        label="Montant compté"
-        onConfirm={(v) => setClosingAmount(v)}
-        onClose={() => setPad(null)}
-      />
-      <NumPad
-        open={pad === "expense"}
-        initialValue={expAmount}
-        label="Montant de la dépense"
-        onConfirm={(v) => setExpAmount(v)}
-        onClose={() => setPad(null)}
-      />
+      <NumPad open={pad === "opening"} initialValue={openingAmount} label="Fond de caisse"
+        onConfirm={(v) => setOpeningAmount(v)} onClose={() => setPad(null)} />
+      <NumPad open={pad === "closing"} initialValue={closingAmount} label="Montant compté"
+        onConfirm={(v) => setClosingAmount(v)} onClose={() => setPad(null)} />
+      <NumPad open={pad === "expense"} initialValue={expAmount} label="Montant de la dépense"
+        onConfirm={(v) => setExpAmount(v)} onClose={() => setPad(null)} />
     </div>
   );
 }
