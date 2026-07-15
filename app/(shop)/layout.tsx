@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import Link from "next/link";
+import NavLink from "./NavLink";
 
 export default async function ShopLayout({
   children,
@@ -25,22 +25,36 @@ export default async function ShopLayout({
     .single();
 
   return (
-    <div className="min-h-screen flex flex-col bg-neutral-50">
-      <header className="bg-white border-b border-neutral-200 px-3 sm:px-4 py-2.5 sm:py-3">
-        <div className="flex items-center gap-2 sm:gap-4">
-          <span className="font-bold text-sm sm:text-lg truncate max-w-[20%] sm:max-w-none">{shop?.name || "Boutique"}</span>
-          <nav className="flex gap-0.5 sm:gap-1 ml-auto sm:ml-2 overflow-x-auto">
-            <Link href="/caisse" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Caisse</Link>
-            <Link href="/caisse-jour" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Caisse jour</Link>
-            <Link href="/produits" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Produits</Link>
-            <Link href="/fournisseurs" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Fournisseurs</Link>
-            <Link href="/ventes" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Ventes</Link>
-            <Link href="/rapports" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Rapports</Link>
-            <Link href="/dashboard" className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium hover:bg-neutral-100 whitespace-nowrap">Bord</Link>
-          </nav>
-          <form action="/auth/signout" method="post" className="ml-auto sm:ml-0 shrink-0">
-            <button className="text-xs sm:text-sm text-neutral-500 hover:text-neutral-900">Déconnexion</button>
-          </form>
+    <div className="min-h-screen flex flex-col bg-neutral-100">
+      <header className="bg-white border-b border-neutral-200 shadow-sm sticky top-0 z-40">
+        <div className="px-3 sm:px-5 py-2.5">
+          <div className="flex items-center gap-3">
+            {/* Logo boutique */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-neutral-900 text-white flex items-center justify-center font-bold text-lg">
+                {(shop?.name || "B").charAt(0).toUpperCase()}
+              </div>
+              <span className="font-bold text-sm sm:text-base hidden sm:block">{shop?.name || "Boutique"}</span>
+            </div>
+
+            {/* Navigation colorée */}
+            <nav className="flex gap-1.5 sm:gap-2 ml-auto overflow-x-auto py-1">
+              <NavLink href="/caisse" color="emerald" icon="🛒" label="Caisse" />
+              <NavLink href="/caisse-jour" color="blue" icon="💰" label="Caisse jour" />
+              <NavLink href="/produits" color="violet" icon="👕" label="Produits" />
+              <NavLink href="/fournisseurs" color="orange" icon="🚚" label="Fournisseurs" />
+              <NavLink href="/ventes" color="cyan" icon="🧾" label="Ventes" />
+              <NavLink href="/rapports" color="rose" icon="📊" label="Rapports" />
+              <NavLink href="/dashboard" color="amber" icon="📈" label="Bord" />
+            </nav>
+
+            {/* Déconnexion */}
+            <form action="/auth/signout" method="post" className="shrink-0">
+              <button className="text-xs sm:text-sm text-neutral-500 hover:text-red-600 font-medium px-2 py-1 rounded-lg hover:bg-red-50 transition">
+                Sortir
+              </button>
+            </form>
+          </div>
         </div>
       </header>
       <main className="flex-1">{children}</main>
