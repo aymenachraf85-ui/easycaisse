@@ -18,8 +18,7 @@ function buildLabels(entries: BarcodeEntry[]) {
 function barcodeSVG(code: string): string {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   try {
-    // Code-barres compact pour étiquette 40x30mm
-    JsBarcode(svg, code, { format: "CODE128", width: 1.5, height: 35, fontSize: 12, margin: 0 });
+    JsBarcode(svg, code, { format: "CODE128", width: 1.4, height: 32, fontSize: 11, margin: 0 });
   } catch {
     return "";
   }
@@ -42,7 +41,7 @@ export default function BarcodeModal({
       const svg = document.getElementById(`bc-${label.uid}`);
       if (svg) {
         try {
-          JsBarcode(svg, label.code, { format: "CODE128", width: 1.5, height: 35, fontSize: 12, margin: 0 });
+          JsBarcode(svg, label.code, { format: "CODE128", width: 1.4, height: 32, fontSize: 11, margin: 0 });
         } catch {}
       }
     });
@@ -63,11 +62,11 @@ export default function BarcodeModal({
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Étiquettes</title>
+        <title>Etiquettes</title>
         <style>
           @page { size: 40mm 30mm; margin: 0; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: sans-serif; }
+          html, body { width: 40mm; }
           .label {
             width: 40mm;
             height: 30mm;
@@ -81,16 +80,17 @@ export default function BarcodeModal({
           }
           .label:last-child { page-break-after: auto; }
           .name {
-            font-size: 9px;
+            font-size: 8px;
             font-weight: 700;
             text-align: center;
-            margin-bottom: 1mm;
+            margin-bottom: 0.5mm;
             max-width: 38mm;
             overflow: hidden;
             white-space: nowrap;
             text-overflow: ellipsis;
+            font-family: sans-serif;
           }
-          .label svg { max-width: 38mm; max-height: 16mm; }
+          .label svg { max-width: 38mm; max-height: 18mm; }
         </style>
       </head>
       <body>
