@@ -19,6 +19,7 @@ type Product = {
 };
 
 type BarcodeRow = { code: string; product_id: string; size: string };
+type Employee = { id: string; name: string };
 
 type CartLine = {
   key: string;
@@ -41,6 +42,8 @@ const REASONS = [
   { value: "deal_special", label: "Deal spécial" },
 ];
 
+const EXPENSE_CATEGORIES = ["Loyer", "Salaires", "Électricité", "Eau", "Achats stock", "Transport", "Retrait employé", "Autre"];
+
 const CATEGORY_COLORS = [
   { bg: "bg-blue-500", light: "bg-blue-50", border: "border-blue-400", text: "text-blue-700" },
   { bg: "bg-pink-500", light: "bg-pink-50", border: "border-pink-400", text: "text-pink-700" },
@@ -60,10 +63,12 @@ export default function CaisseClient({
   initialProducts,
   barcodes,
   shopName,
+  employees,
 }: {
   initialProducts: Product[];
   barcodes: BarcodeRow[];
   shopName: string;
+  employees: Employee[];
 }) {
   const supabase = createClient();
   const [products, setProducts] = useState<Product[]>(initialProducts);
@@ -77,12 +82,19 @@ export default function CaisseClient({
   const [scanFeedback, setScanFeedback] = useState<string | null>(null);
 
   const [sizePickProduct, setSizePickProduct] = useState<Product | null>(null);
-
-  // Pavé numérique : quelle ligne du panier on édite
   const [padKey, setPadKey] = useState<string | null>(null);
 
   const [ticket, setTicket] = useState<TicketData | null>(null);
   const [ticketWidth, setTicketWidth] = useState<58 | 80>(80);
+
+  // Dépense rapide
+  const [showExpense, setShowExpense] = useState(false);
+  const [expCategory, setExpCategory] = useState("Retrait employé");
+  const [expAmount, setExpAmount] = useState("");
+  const [expEmployee, setExpEmployee] = useState("");
+  const [expDesc, setExpDesc] = useState("");
+  const [expBusy, setExpBusy] = useState(false);
+  const [expPadOpen, setExpPadOpen] = useState(false);
 
   const barcodeMap = useMemo(() => {
     const m = new Map<string, { product_id: string; size: string }>();
@@ -229,6 +241,24 @@ export default function CaisseClient({
     refreshProducts();
   }
 
+  // Ajout dépense rapide depuis la Caisse
+  async function addExpense() {
+    if (!expAmount || Number(expAmount) <= 0) { alert("Montant invalide"); return; }
+    setExpBusy(true);
+    const { error } = await supabase.from("expenses").insert({
+      category: expCategory,
+      amount: Number(expAmount),
+      description: expDesc.trim() || null,
+      employee_id: expEmployee || null,
+    });
+    setExpBusy(false);
+    if (error) { alert("Erreur : " + error.message); return; }
+    setExpAmount(""); setExpDesc(""); setExpEmployee(""); setExpCategory("Retrait employé");
+    setShowExpense(false);
+    setMessage({ type: "ok", text: "Dépense enregistrée" });
+    setTimeout(() => setMessage(null), 2500);
+  }
+
   const cartPanel = (
     <>
       <h2 className="font-bold text-lg mb-3">Panier</h2>
@@ -250,7 +280,6 @@ export default function CaisseClient({
                   <span className="px-2 text-sm w-8 text-center">{c.quantity}</span>
                   <button onClick={() => updateLine(c.key, { quantity: Math.min(c.max_stock, c.quantity + 1) })} className="px-3 py-1.5 text-neutral-600 font-bold">+</button>
                 </div>
-                {/* Prix : ouvre le pavé numérique au clic */}
                 <button onClick={() => setPadKey(c.key)}
                   className="flex-1 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm text-right font-medium bg-white">
                   {c.sold_price_text || "0"} MAD
@@ -292,8 +321,12 @@ export default function CaisseClient({
         <div className={`text-sm rounded-lg px-3 py-2 mb-3 ${message.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{message.text}</div>
       )}
       <button onClick={checkout} disabled={cart.length === 0 || processing}
-        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-4 font-bold text-lg disabled:opacity-40 disabled:bg-neutral-400">
+        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg py-4 font-bold text-lg disabled:opacity-40 disabled:bg-neutral-400 mb-2">
         {processing ? "Encaissement…" : "✓ Encaisser"}
+      </button>
+      <button onClick={() => setShowExpense(true)}
+        className="w-full border-2 border-orange-400 text-orange-600 rounded-lg py-2.5 font-semibold text-sm">
+        💸 Dépense / Retrait employé
       </button>
     </>
   );
@@ -405,13 +438,61 @@ export default function CaisseClient({
         </div>
       )}
 
-      {/* Pavé numérique pour le prix */}
+      {/* Popup dépense rapide */}
+      {showExpense && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={() => setShowExpense(false)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold mb-3">Ajouter une dépense / retrait</h3>
+
+            <label className="text-xs font-medium text-neutral-500 block mb-1">Catégorie</label>
+            <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-3 py-2 w-full mb-3">
+              {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+
+            <label className="text-xs font-medium text-neutral-500 block mb-1">Montant</label>
+            <button onClick={() => setExpPadOpen(true)}
+              className="border border-neutral-300 rounded-lg px-3 py-2 w-full text-left bg-white mb-3">
+              {expAmount ? `${expAmount} MAD` : <span className="text-neutral-400">Toucher pour saisir</span>}
+            </button>
+
+            <label className="text-xs font-medium text-neutral-500 block mb-1">Employé (optionnel)</label>
+            <select value={expEmployee} onChange={(e) => setExpEmployee(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-3 py-2 w-full mb-3">
+              <option value="">— Aucun —</option>
+              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+            </select>
+
+            <label className="text-xs font-medium text-neutral-500 block mb-1">Note (optionnel)</label>
+            <input type="text" value={expDesc} onChange={(e) => setExpDesc(e.target.value)}
+              className="border border-neutral-300 rounded-lg px-3 py-2 w-full mb-4" />
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowExpense(false)} className="flex-1 border border-neutral-300 rounded-lg py-2.5 font-medium">Annuler</button>
+              <button onClick={addExpense} disabled={expBusy} className="flex-[2] bg-orange-500 text-white rounded-lg py-2.5 font-bold disabled:opacity-50">
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pavé numérique pour le prix du panier */}
       <NumPad
         open={padKey !== null}
         initialValue={padLine?.sold_price_text || ""}
         label={padLine ? `Prix — ${padLine.name} (${padLine.size})` : "Prix"}
         onConfirm={(v) => { if (padKey) setPrice(padKey, v); }}
         onClose={() => setPadKey(null)}
+      />
+
+      {/* Pavé numérique pour la dépense */}
+      <NumPad
+        open={expPadOpen}
+        initialValue={expAmount}
+        label="Montant de la dépense"
+        onConfirm={(v) => setExpAmount(v)}
+        onClose={() => setExpPadOpen(false)}
       />
 
       {ticket && (
