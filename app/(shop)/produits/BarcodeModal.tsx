@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import JsBarcode from "jsbarcode";
 
 type BarcodeEntry = { size: string; code: string; qty: number };
@@ -15,11 +15,11 @@ function buildLabels(entries: BarcodeEntry[]) {
   return labels;
 }
 
-// Génère le SVG d'un code-barres et renvoie son code HTML
 function barcodeSVG(code: string): string {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   try {
-    JsBarcode(svg, code, { format: "CODE128", width: 2, height: 55, fontSize: 16, margin: 0 });
+    // Code-barres compact pour étiquette 40x30mm
+    JsBarcode(svg, code, { format: "CODE128", width: 1.5, height: 35, fontSize: 12, margin: 0 });
   } catch {
     return "";
   }
@@ -37,27 +37,24 @@ export default function BarcodeModal({
 }) {
   const labels = buildLabels(entries);
 
-  // Aperçu écran
   useEffect(() => {
     labels.forEach((label) => {
       const svg = document.getElementById(`bc-${label.uid}`);
       if (svg) {
         try {
-          JsBarcode(svg, label.code, { format: "CODE128", width: 2, height: 50, fontSize: 16, margin: 0 });
+          JsBarcode(svg, label.code, { format: "CODE128", width: 1.5, height: 35, fontSize: 12, margin: 0 });
         } catch {}
       }
     });
   }, [labels]);
 
-  // Impression : ouvre une fenêtre HTML pure, 1 étiquette = 1 page
   function printLabels() {
     const win = window.open("", "_blank", "width=400,height=600");
     if (!win) { alert("Autorisez les pop-ups pour imprimer."); return; }
 
     const labelsHTML = labels.map((label) => `
       <div class="label">
-        <div class="name">${productName}</div>
-        <div class="size">Taille ${label.size}</div>
+        <div class="name">${productName} - ${label.size}</div>
         ${barcodeSVG(label.code)}
       </div>
     `).join("");
@@ -68,24 +65,32 @@ export default function BarcodeModal({
       <head>
         <title>Étiquettes</title>
         <style>
-          @page { size: 80mm 80mm; margin: 0; }
+          @page { size: 40mm 30mm; margin: 0; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { font-family: sans-serif; }
           .label {
-            width: 80mm;
-            height: 80mm;
+            width: 40mm;
+            height: 30mm;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             page-break-after: always;
             overflow: hidden;
-            padding: 4mm;
+            padding: 1mm;
           }
           .label:last-child { page-break-after: auto; }
-          .name { font-size: 15px; font-weight: 700; text-align: center; margin-bottom: 2mm; }
-          .size { font-size: 13px; text-align: center; margin-bottom: 3mm; }
-          .label svg { max-width: 72mm; }
+          .name {
+            font-size: 9px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 1mm;
+            max-width: 38mm;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+          }
+          .label svg { max-width: 38mm; max-height: 16mm; }
         </style>
       </head>
       <body>
@@ -108,7 +113,7 @@ export default function BarcodeModal({
         <div className="flex items-center justify-between p-4 border-b border-neutral-200">
           <div>
             <h3 className="font-semibold">Codes-barres — {productName}</h3>
-            <p className="text-xs text-neutral-500">{labels.length} étiquette(s) · 1 code par étiquette</p>
+            <p className="text-xs text-neutral-500">{labels.length} étiquette(s) · 40×30mm</p>
           </div>
           <button onClick={onClose} className="text-neutral-500 text-xl">✕</button>
         </div>
@@ -116,8 +121,7 @@ export default function BarcodeModal({
         <div className="p-4 grid grid-cols-2 gap-2">
           {labels.map((label) => (
             <div key={label.uid} className="border border-neutral-200 rounded-lg p-2 text-center">
-              <div className="text-xs font-semibold truncate">{productName}</div>
-              <div className="text-xs mb-1">Taille {label.size}</div>
+              <div className="text-xs font-semibold truncate">{productName} - {label.size}</div>
               <svg id={`bc-${label.uid}`}></svg>
             </div>
           ))}
