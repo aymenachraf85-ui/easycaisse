@@ -3,23 +3,26 @@
 type TopProduct = { name: string; qty: number };
 type LowStock = { name: string; quantity: number; low_stock_threshold: number };
 type PriceChange = {
-  name: string;
-  original_price: number;
-  new_price: number;
-  difference: number;
-  reason: string | null;
-  created_at: string;
+  name: string; original_price: number; new_price: number;
+  difference: number; reason: string | null; created_at: string;
 };
+type ExpenseRow = {
+  id: string; category: string; amount: number;
+  description: string | null; created_at: string; employee_name: string | null;
+};
+type Withdrawal = { employee_name: string; total: number; count: number };
 
 type Stats = {
   today_revenue?: number;
   today_count?: number;
   today_profit?: number;
   today_expenses?: number;
+  today_expenses_list?: ExpenseRow[];
   week_revenue?: number;
   month_revenue?: number;
   month_profit?: number;
   month_expenses?: number;
+  month_withdrawals?: Withdrawal[];
   suppliers_due?: number;
   stock_value?: number;
   top_products?: TopProduct[];
@@ -32,19 +35,17 @@ function fmt(n: number | undefined) {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  promo: "Promo",
-  client_fidele: "Client fidèle",
-  defaut: "Défaut",
-  deal_special: "Deal spécial",
+  promo: "Promo", client_fidele: "Client fidèle", defaut: "Défaut", deal_special: "Deal spécial",
 };
 
 export default function DashboardClient({ stats }: { stats: Stats }) {
   const topProducts = stats.top_products || [];
   const lowStock = stats.low_stock || [];
   const priceChanges = stats.price_changes || [];
+  const todayExpenses = stats.today_expenses_list || [];
+  const withdrawals = stats.month_withdrawals || [];
   const maxQty = topProducts.length ? Math.max(...topProducts.map((t) => t.qty)) : 1;
 
-  // Bénéfices nets = profit brut - dépenses
   const todayNet = (stats.today_profit || 0) - (stats.today_expenses || 0);
   const monthNet = (stats.month_profit || 0) - (stats.month_expenses || 0);
 
@@ -52,7 +53,6 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
     <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Tableau de bord</h1>
 
-      {/* Aujourd'hui */}
       <h2 className="text-sm font-semibold text-neutral-500 uppercase mb-2">Aujourd&apos;hui</h2>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard label="Ventes" value={fmt(stats.today_revenue)} sub={`${stats.today_count || 0} vente(s)`} />
@@ -61,7 +61,6 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
         <StatCard label="Bénéfice net" value={fmt(todayNet)} highlight={todayNet >= 0} danger={todayNet < 0} />
       </div>
 
-      {/* Ce mois */}
       <h2 className="text-sm font-semibold text-neutral-500 uppercase mb-2">Ce mois</h2>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard label="Ventes" value={fmt(stats.month_revenue)} />
@@ -70,7 +69,6 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
         <StatCard label="Bénéfice net" value={fmt(monthNet)} highlight={monthNet >= 0} danger={monthNet < 0} />
       </div>
 
-      {/* Situation */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
         <div className="bg-white border border-neutral-200 rounded-xl p-5">
           <div className="text-xs text-neutral-500">Valeur du stock (prix d&apos;achat)</div>
@@ -83,7 +81,44 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Top produits */}
+        {/* Dépenses du jour, détaillées */}
+        <div className="bg-white border border-orange-200 rounded-xl p-5">
+          <h2 className="font-semibold mb-3">Dépenses d&apos;aujourd&apos;hui</h2>
+          {todayExpenses.length === 0 ? (
+            <p className="text-sm text-neutral-400">Aucune dépense aujourd&apos;hui.</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {todayExpenses.map((e) => (
+                <div key={e.id} className="flex justify-between items-start text-sm border-b border-neutral-100 pb-2">
+                  <div>
+                    <span className="font-medium">{e.category}</span>
+                    {e.employee_name ? <span className="text-blue-600"> · {e.employee_name}</span> : null}
+                    {e.description ? <div className="text-xs text-neutral-400">{e.description}</div> : null}
+                  </div>
+                  <span className="text-red-600 font-medium whitespace-nowrap">−{fmt(e.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Qui a pris quoi ce mois */}
+        <div className="bg-white border border-blue-200 rounded-xl p-5">
+          <h2 className="font-semibold mb-3">Retraits employés <span className="text-xs text-neutral-400 font-normal">(ce mois)</span></h2>
+          {withdrawals.length === 0 ? (
+            <p className="text-sm text-neutral-400">Aucun retrait ce mois.</p>
+          ) : (
+            <div className="space-y-2">
+              {withdrawals.map((w, i) => (
+                <div key={i} className="flex justify-between text-sm border-b border-neutral-100 pb-2">
+                  <span className="font-medium">{w.employee_name} <span className="text-neutral-400 text-xs">({w.count})</span></span>
+                  <span className="font-bold text-blue-600">{fmt(w.total)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="bg-white border border-neutral-200 rounded-xl p-5">
           <h2 className="font-semibold mb-3">Articles les plus vendus <span className="text-xs text-neutral-400 font-normal">(30 j)</span></h2>
           {topProducts.length === 0 ? (
@@ -105,7 +140,6 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
           )}
         </div>
 
-        {/* Stock faible */}
         <div className="bg-white border border-neutral-200 rounded-xl p-5">
           <h2 className="font-semibold mb-3">Stock faible</h2>
           {lowStock.length === 0 ? (
@@ -124,7 +158,6 @@ export default function DashboardClient({ stats }: { stats: Stats }) {
           )}
         </div>
 
-        {/* Historique changements de prix */}
         <div className="bg-white border border-neutral-200 rounded-xl p-5 lg:col-span-2">
           <h2 className="font-semibold mb-3">Changements de prix récents</h2>
           {priceChanges.length === 0 ? (
